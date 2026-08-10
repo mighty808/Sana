@@ -4,12 +4,14 @@ import { User } from '../models/User.js'
 import { hashPassword } from '../services/auth.service.js'
 import { DEFAULT_ROLE_PERMISSIONS, ROLE_NAMES } from '../types/permissions.js'
 import { logger } from './logger.js'
+import { seedBulkClinicalData } from './bulkSeed.js'
 import mongoose from 'mongoose'
 
 // Run with `npm run seed` (see server/package.json). Idempotent — safe to run
-// multiple times: roles are upserted (created or updated in place) and
-// existing test accounts are skipped rather than duplicated or overwritten.
-// Phase 11 will extend this same script with realistic bulk patient/appointment data.
+// multiple times: roles are upserted (created or updated in place), existing
+// test accounts are skipped rather than duplicated or overwritten, and the
+// bulk clinical data step (see bulkSeed.ts) skips itself entirely once it
+// detects a realistic amount of data already exists.
 
 // Shared password for all seeded test accounts — fine for a local dev/demo
 // database, never use a fixed password like this in a real deployment.
@@ -60,6 +62,10 @@ async function seed() {
     })
     logger.info(`Created test account: ${account.email} / ${TEST_PASSWORD}`)
   }
+
+  // Step 3: generate realistic bulk demo data (patients, extra doctors/
+  // nurses, appointments, encounters, lab orders) — see bulkSeed.ts.
+  await seedBulkClinicalData()
 
   // The seed script is a one-off run (not the long-lived server process), so
   // close the DB connection cleanly when done instead of leaving it open.
