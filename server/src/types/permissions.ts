@@ -83,16 +83,23 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     'analytics.read',
   ],
   // Nurse: records vitals and views patients/appointments, but cannot create
-  // clinical records like diagnoses or lab orders.
+  // clinical records like diagnoses or lab orders. Holds 'analytics.read'
+  // for their own dashboard (today's appointments, encounters in progress) —
+  // added in Phase 9, since the blueprint's module list explicitly calls
+  // for a "nurse's ward" dashboard view.
   NURSE: [
     'patient.read',
     'appointment.read',
     'encounter.read',
     'vitals.create',
     'notification.read',
+    'analytics.read',
   ],
   // Patient: read-only access to their own appointments, results, and invoices
   // (ownership filtering happens in the service layer, not here — this list
   // only controls which *types* of resource a patient can read at all).
-  PATIENT: ['appointment.read', 'labresult.read', 'invoice.read', 'notification.read'],
+  // 'analytics.read' is included too — GET /analytics/dashboard is one
+  // generic endpoint serving all 4 roles their own summary (upcoming
+  // appointments, unread notifications, outstanding balance for a patient).
+  PATIENT: ['appointment.read', 'labresult.read', 'invoice.read', 'notification.read', 'analytics.read'],
 }

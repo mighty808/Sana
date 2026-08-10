@@ -8,10 +8,10 @@ import swaggerJsdoc from 'swagger-jsdoc'
 //
 // Coverage note: auth, users, patients, departments, appointments,
 // encounters, lab orders/results, notifications, billing (invoices/
-// payments), and MediAssist AI routes are documented with @openapi blocks
-// so far (Phases 2-8). Each later phase should add its own blocks to its
-// route files as those endpoints are built, rather than documenting
-// everything upfront before the endpoints exist.
+// payments), MediAssist AI, and analytics/audit-log routes are documented
+// with @openapi blocks so far (Phases 2-9). Each later phase should add
+// its own blocks to its route files as those endpoints are built, rather
+// than documenting everything upfront before the endpoints exist.
 export const swaggerSpec = swaggerJsdoc({
   definition: {
     openapi: '3.0.3',
