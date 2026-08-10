@@ -1,11 +1,29 @@
-import { Invoice } from '../models/Invoice.js'
+import { Invoice, type InvoiceStatus } from '../models/Invoice.js'
 import { Encounter } from '../models/Encounter.js'
 import { generateId } from '../utils/generateId.js'
 import { AppError, assertValidObjectId, isDuplicateKeyError } from '../utils/apiResponse.js'
 import { roundMoney } from '../utils/money.js'
+import { resolvePagination } from '../utils/pagination.js'
 import type { AuthedUser } from '../types/user.js'
 import { listPaymentsForInvoice } from './payment.service.js'
 import { getPatientForUser } from './patient.service.js'
+
+// Statuses that still owe money — used both for filtering and for the
+// shared outstanding-balance aggregate below.
+const OPEN_INVOICE_STATUSES: InvoiceStatus[] = ['UNPAID', 'PARTIALLY_PAID']
+
+// Sums `balance` across every invoice matching `extraMatch` that's still
+// open (UNPAID or PARTIALLY_PAID) — the one "how much money is still owed"
+// calculation, parameterized by an extra filter so both the admin's
+// system-wide total and a single patient's own total go through the same
+// pipeline instead of two near-identical copies that could drift apart.
+export async function sumOutstandingBalance(extraMatch: Record<string, unknown> = {}): Promise<number> {
+  const result = await Invoice.aggregate([
+    { $match: { status: { $in: OPEN_INVOICE_STATUSES }, ...extraMatch } },
+    { $group: { _id: null, total: { $sum: '$balance' } } },
+  ])
+  return result[0]?.total ?? 0
+}
 
 interface InvoiceItemInput {
   description: string
@@ -106,16 +124,9 @@ export async function listInvoices(user: AuthedUser, opts: { page?: number; limi
     return Invoice.find({ patient: patient.id }).sort({ createdAt: -1 })
   }
 
-  // ADMIN. Same NaN-safe pagination defaulting as patient.service.ts's searchPatients.
-  const page = Number.isFinite(opts.page) && opts.page! > 0 ? Math.floor(opts.page!) : 1
-  const limit =
-    Number.isFinite(opts.limit) && opts.limit! > 0 ? Math.min(100, Math.floor(opts.limit!)) : 20
-
-  return Invoice.find()
-    .populate('patient')
-    .sort({ createdAt: -1 })
-    .skip((page - 1) * limit)
-    .limit(limit)
+  // ADMIN.
+  const { skip, limit } = resolvePagination(opts)
+  return Invoice.find().populate('patient').sort({ createdAt: -1 }).skip(skip).limit(limit)
 }
 
 // Fetches one invoice with its payment history. For PATIENT, this is

@@ -1,14 +1,16 @@
 import { Patient } from '../models/Patient.js'
 import { User } from '../models/User.js'
+import { Role } from '../models/Role.js'
 import { Appointment } from '../models/Appointment.js'
 import { Encounter } from '../models/Encounter.js'
 import { LabOrder } from '../models/LabOrder.js'
-import { Invoice } from '../models/Invoice.js'
 import { AiConsultation } from '../models/AiConsultation.js'
 import { VitalSign } from '../models/VitalSign.js'
 import { Notification } from '../models/Notification.js'
+import { AppError } from '../utils/apiResponse.js'
 import type { AuthedUser } from '../types/user.js'
 import { getPatientForUser } from './patient.service.js'
+import { sumOutstandingBalance } from './invoice.service.js'
 
 // Returns the [start, end) boundaries of "today" in local server time —
 // used everywhere this file needs to count "today's appointments" etc.
@@ -27,7 +29,7 @@ function todayRange() {
 // ADMIN dashboard: system-wide counts an administrator needs at a glance —
 // how many patients are registered, how the day's appointments are moving,
 // how much lab work is outstanding, how much billing is unpaid, and how
-// many staff accounts exist. Every number here is a simple count/sum —
+// many STAFF accounts exist. Every number here is a simple count/sum —
 // deliberately not pre-aggregating into chart-ready buckets (e.g. a 7-day
 // trend) since nothing in the blueprint's endpoint table asks for that
 // level of detail, and the frontend (built in a later pass) can shape
@@ -35,32 +37,23 @@ function todayRange() {
 async function getAdminDashboard() {
   const { start, end } = todayRange()
 
-  const [
-    totalPatients,
-    totalUsers,
-    appointmentsToday,
-    pendingLabOrders,
-    outstandingInvoices,
-  ] = await Promise.all([
-    Patient.countDocuments({ status: 'ACTIVE' }),
-    User.countDocuments({ status: 'ACTIVE' }),
-    Appointment.countDocuments({ date: { $gte: start, $lt: end } }),
-    LabOrder.countDocuments({ status: { $in: ['ORDERED', 'PROCESSING'] } }),
-    // Sum of `balance` across every invoice that isn't fully settled or
-    // voided — the single "money still owed to the hospital" figure.
-    Invoice.aggregate([
-      { $match: { status: { $in: ['UNPAID', 'PARTIALLY_PAID'] } } },
-      { $group: { _id: null, total: { $sum: '$balance' } } },
-    ]),
-  ])
+  // "Staff" means every role except PATIENT — the User collection holds
+  // one login account per role (admin/doctor/nurse/patient all included),
+  // so counting ALL active users would report thousands of patient login
+  // accounts as "users," not the handful of actual hospital staff this
+  // number is meant to represent.
+  const staffRoleIds = await Role.find({ name: { $ne: 'PATIENT' } }).distinct('_id')
 
-  return {
-    totalPatients,
-    totalUsers,
-    appointmentsToday,
-    pendingLabOrders,
-    outstandingBalance: outstandingInvoices[0]?.total ?? 0,
-  }
+  const [totalPatients, totalStaffUsers, appointmentsToday, pendingLabOrders, outstandingBalance] =
+    await Promise.all([
+      Patient.countDocuments({ status: 'ACTIVE' }),
+      User.countDocuments({ status: 'ACTIVE', role: { $in: staffRoleIds } }),
+      Appointment.countDocuments({ date: { $gte: start, $lt: end } }),
+      LabOrder.countDocuments({ status: { $in: ['ORDERED', 'PROCESSING'] } }),
+      sumOutstandingBalance(),
+    ])
+
+  return { totalPatients, totalStaffUsers, appointmentsToday, pendingLabOrders, outstandingBalance }
 }
 
 // DOCTOR dashboard: this doctor's own workload — how many distinct
@@ -71,19 +64,15 @@ async function getAdminDashboard() {
 async function getDoctorDashboard(doctorId: string) {
   const { start, end } = todayRange()
 
-  const [
-    myPatientIds,
-    appointmentsToday,
-    labOrdersAwaitingReview,
-    aiConsultationsUnreviewed,
-  ] = await Promise.all([
-    Appointment.distinct('patient', { doctor: doctorId }),
-    Appointment.countDocuments({ doctor: doctorId, date: { $gte: start, $lt: end } }),
-    // COMPLETED means every test has a result, but the order hasn't been
-    // marked REVIEWED — see models/LabOrder.ts's status lifecycle comment.
-    LabOrder.countDocuments({ doctor: doctorId, status: 'COMPLETED' }),
-    AiConsultation.countDocuments({ doctor: doctorId, reviewStatus: 'UNREVIEWED' }),
-  ])
+  const [myPatientIds, appointmentsToday, labOrdersAwaitingReview, aiConsultationsUnreviewed] =
+    await Promise.all([
+      Appointment.distinct('patient', { doctor: doctorId }),
+      Appointment.countDocuments({ doctor: doctorId, date: { $gte: start, $lt: end } }),
+      // COMPLETED means every test has a result, but the order hasn't been
+      // marked REVIEWED — see models/LabOrder.ts's status lifecycle comment.
+      LabOrder.countDocuments({ doctor: doctorId, status: 'COMPLETED' }),
+      AiConsultation.countDocuments({ doctor: doctorId, reviewStatus: 'UNREVIEWED' }),
+    ])
 
   return {
     myPatients: myPatientIds.length,
@@ -119,24 +108,28 @@ async function getPatientDashboard(userId: string) {
     return { upcomingAppointments: 0, unreadNotifications: 0, outstandingBalance: 0 }
   }
 
-  const [upcomingAppointments, unreadNotifications, invoices] = await Promise.all([
+  const { start } = todayRange()
+
+  const [upcomingAppointments, unreadNotifications, outstandingBalance] = await Promise.all([
     Appointment.countDocuments({
       patient: patient.id,
-      date: { $gte: new Date() },
+      // Compared against the START of today, not the current instant —
+      // Appointment.date stores only the calendar day (no time-of-day
+      // component; see appointment.service.ts's exact-equality
+      // double-booking check, which relies on that), so comparing against
+      // `new Date()` (the current moment) would wrongly exclude today's
+      // own appointment for the entire day until midnight rolled it out of
+      // range on its own — e.g. a 5pm appointment would vanish from
+      // "upcoming" as soon as the clock passed 12:00am, hours before it
+      // actually happened.
+      date: { $gte: start },
       status: { $nin: ['CANCELLED', 'NO_SHOW', 'COMPLETED'] },
     }),
     Notification.countDocuments({ user: userId, readAt: { $exists: false } }),
-    Invoice.aggregate([
-      { $match: { patient: patient._id, status: { $in: ['UNPAID', 'PARTIALLY_PAID'] } } },
-      { $group: { _id: null, total: { $sum: '$balance' } } },
-    ]),
+    sumOutstandingBalance({ patient: patient._id }),
   ])
 
-  return {
-    upcomingAppointments,
-    unreadNotifications,
-    outstandingBalance: invoices[0]?.total ?? 0,
-  }
+  return { upcomingAppointments, unreadNotifications, outstandingBalance }
 }
 
 // Single entry point GET /analytics/dashboard calls — branches on the
@@ -155,5 +148,14 @@ export async function getDashboard(user: AuthedUser) {
       return { role: 'NURSE', ...(await getNurseDashboard(user.id)) }
     case 'PATIENT':
       return { role: 'PATIENT', ...(await getPatientDashboard(user.id)) }
+    default:
+      // Should be unreachable — Role.name is DB-enum-restricted to the 4
+      // known roles (see types/permissions.ts's ROLE_NAMES) — but an
+      // explicit throw here means a future drift (a role renamed/added
+      // without updating this switch) surfaces as a loud 500 instead of
+      // silently returning `undefined`, which would otherwise make
+      // ok(res, undefined) drop the `data` key and send the client a
+      // bare `{success:true}` with no error signal at all.
+      throw new AppError(`No dashboard defined for role '${user.role.name}'`, 500, 'UNKNOWN_ROLE')
   }
 }

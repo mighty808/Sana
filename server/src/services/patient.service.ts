@@ -1,6 +1,7 @@
 import { Patient } from '../models/Patient.js'
 import { generateId } from '../utils/generateId.js'
 import { AppError } from '../utils/apiResponse.js'
+import { resolvePagination } from '../utils/pagination.js'
 import type { BloodGroup } from '../types/patient.js'
 
 // Shape accepted for both creating and updating a patient — matches the Zod
@@ -30,18 +31,7 @@ export async function createPatient(input: PatientInput) {
 // against the text index defined on the Patient schema (name, patientNumber,
 // phone). VOIDED (soft-deleted) patients are excluded unless explicitly requested.
 export async function searchPatients(opts: { search?: string; page?: number; limit?: number }) {
-  // `Number.isFinite` (not just `?? `) is required here: the controller
-  // passes `Number(req.query.page)` straight through, and `Number("abc")`
-  // is `NaN` — a "truthy-ish" value that `??` does NOT replace (only `null`/
-  // `undefined` trigger `??`'s fallback). Without this check, garbage input
-  // like `?page=abc` would flow through as NaN into `.skip()/.limit()`
-  // below, which the MongoDB driver rejects with an uncaught error. Instead,
-  // invalid/missing input quietly falls back to the same defaults as before.
-  const page = Number.isFinite(opts.page) && opts.page! > 0 ? Math.floor(opts.page!) : 1
-  const limit =
-    Number.isFinite(opts.limit) && opts.limit! > 0
-      ? Math.min(100, Math.floor(opts.limit!)) // cap page size to avoid huge unbounded queries
-      : 20
+  const { page, limit, skip } = resolvePagination(opts)
 
   const filter: Record<string, unknown> = { status: 'ACTIVE' }
   if (opts.search) {
@@ -49,10 +39,7 @@ export async function searchPatients(opts: { search?: string; page?: number; lim
   }
 
   const [patients, total] = await Promise.all([
-    Patient.find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(limit),
+    Patient.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
     Patient.countDocuments(filter),
   ])
 
