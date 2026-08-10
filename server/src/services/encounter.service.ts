@@ -49,22 +49,28 @@ export async function createEncounter(input: CreateEncounterInput, doctorId: str
 // diagnoses recorded against it so far. Those live in their own collections
 // (see models/VitalSign.ts, models/Diagnosis.ts) rather than embedded here,
 // so they're queried alongside the encounter rather than populated on it.
+//
+// The encounter lookup runs FIRST (not in parallel with the vitals/diagnoses
+// queries) so a request for a nonexistent id fails fast with a 404 after one
+// query, instead of always paying for three DB round trips even when two of
+// them can never return anything useful.
 export async function getEncounterById(id: string) {
-  const [encounter, vitals, diagnoses] = await Promise.all([
-    // `doctor` is restricted to PUBLIC_USER_FIELDS — a plain
-    // `.populate('doctor')` would embed the doctor's ENTIRE User document,
-    // including passwordHash, into this response.
-    Encounter.findById(id).populate([
-      { path: 'patient' },
-      { path: 'doctor', select: PUBLIC_USER_FIELDS },
-      { path: 'department' },
-      { path: 'appointment' },
-    ]),
+  // `doctor` is restricted to PUBLIC_USER_FIELDS — a plain `.populate('doctor')`
+  // would embed the doctor's ENTIRE User document, including passwordHash,
+  // into this response.
+  const encounter = await Encounter.findById(id).populate([
+    { path: 'patient' },
+    { path: 'doctor', select: PUBLIC_USER_FIELDS },
+    { path: 'department' },
+    { path: 'appointment' },
+  ])
+  if (!encounter) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
+
+  const [vitals, diagnoses] = await Promise.all([
     VitalSign.find({ encounter: id }).sort({ recordedAt: 1 }),
     Diagnosis.find({ encounter: id }).sort({ createdAt: 1 }),
   ])
 
-  if (!encounter) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
   return { encounter, vitals, diagnoses }
 }
 
@@ -83,6 +89,13 @@ interface VitalsInput {
 export async function addVitals(encounterId: string, recordedBy: string, input: VitalsInput) {
   const encounter = await Encounter.findById(encounterId)
   if (!encounter) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
+  // A COMPLETED encounter is a closed clinical record — nothing currently
+  // marks an encounter COMPLETED (no such endpoint exists yet), but this
+  // guard is here so that whenever a future phase adds one, vitals can't be
+  // silently appended to (and thus reopen) an already-closed encounter.
+  if (encounter.status === 'COMPLETED') {
+    throw new AppError('Cannot record vitals on a completed encounter', 409, 'ENCOUNTER_COMPLETED')
+  }
 
   return VitalSign.create({
     ...input,
@@ -102,6 +115,10 @@ interface DiagnosisInput {
 export async function addDiagnosis(encounterId: string, doctorId: string, input: DiagnosisInput) {
   const encounter = await Encounter.findById(encounterId)
   if (!encounter) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
+  // See the identical guard + comment in addVitals above.
+  if (encounter.status === 'COMPLETED') {
+    throw new AppError('Cannot add a diagnosis to a completed encounter', 409, 'ENCOUNTER_COMPLETED')
+  }
 
   return Diagnosis.create({
     ...input,

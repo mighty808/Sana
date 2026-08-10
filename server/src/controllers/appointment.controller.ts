@@ -23,10 +23,14 @@ export async function list(req: Request, res: Response) {
 }
 
 // PATCH /appointments/:id/status — requires 'appointment.update'.
+// req.user! is passed through so the service can restrict a DOCTOR caller
+// to only updating their own assigned appointments (see the ownership note
+// on updateAppointmentStatus in appointment.service.ts).
 export async function updateStatus(req: Request, res: Response) {
   const appointment = await appointmentService.updateAppointmentStatus(
     req.params.id as string,
     req.body.status as AppointmentStatus,
+    req.user!,
   )
   await auditService.logAction(req, req.user!.id, 'APPOINTMENT_STATUS_UPDATED', 'Appointment', appointment.id, {
     status: appointment.status,
