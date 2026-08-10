@@ -1,5 +1,5 @@
 import { Department } from '../models/Department.js'
-import { AppError } from '../utils/apiResponse.js'
+import { AppError, isDuplicateKeyError } from '../utils/apiResponse.js'
 
 // Creates a new department. Relies on the schema's `unique: true` on `name`
 // to reject duplicates — Mongoose surfaces that as a driver-level error
@@ -9,7 +9,7 @@ export async function createDepartment(input: { name: string; description?: stri
   try {
     return await Department.create(input)
   } catch (err: unknown) {
-    if (err && typeof err === 'object' && 'code' in err && err.code === 11000) {
+    if (isDuplicateKeyError(err)) {
       throw new AppError('A department with that name already exists', 409, 'DEPARTMENT_EXISTS')
     }
     throw err
@@ -26,9 +26,22 @@ export async function listDepartments(includeInactive = false) {
   return Department.find(filter).sort({ name: 1 })
 }
 
-// Partially updates a department (name/description/status).
-export async function updateDepartment(id: string, updates: Partial<{ name: string; description: string; status: 'ACTIVE' | 'INACTIVE' }>) {
-  const department = await Department.findByIdAndUpdate(id, updates, { returnDocument: 'after' })
-  if (!department) throw new AppError('Department not found', 404, 'DEPARTMENT_NOT_FOUND')
-  return department
+// Partially updates a department (name/description/status). Wrapped in the
+// same try/catch as createDepartment above — without it, renaming a
+// department to a name that collides with another one's unique `name`
+// would leak a raw 500 instead of the same clean 409 create() already returns.
+export async function updateDepartment(
+  id: string,
+  updates: Partial<{ name: string; description: string; status: 'ACTIVE' | 'INACTIVE' }>,
+) {
+  try {
+    const department = await Department.findByIdAndUpdate(id, updates, { returnDocument: 'after' })
+    if (!department) throw new AppError('Department not found', 404, 'DEPARTMENT_NOT_FOUND')
+    return department
+  } catch (err: unknown) {
+    if (isDuplicateKeyError(err)) {
+      throw new AppError('A department with that name already exists', 409, 'DEPARTMENT_EXISTS')
+    }
+    throw err
+  }
 }

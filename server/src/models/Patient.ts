@@ -1,4 +1,5 @@
 import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose'
+import { BLOOD_GROUPS } from '../types/patient.js'
 
 // A patient's demographic/registration record — separate from the `User`
 // collection. Most patients in the system are registered by Admin/Doctor
@@ -19,7 +20,7 @@ const patientSchema = new Schema(
     address: { type: String, trim: true },
     bloodGroup: {
       type: String,
-      enum: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'UNKNOWN'],
+      enum: BLOOD_GROUPS,
       default: 'UNKNOWN',
     },
     // Embedded subdocument (not a separate collection) since it's simple,

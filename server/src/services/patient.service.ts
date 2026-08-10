@@ -1,10 +1,7 @@
-import { Patient, type PatientDoc } from '../models/Patient.js'
+import { Patient } from '../models/Patient.js'
 import { generateId } from '../utils/generateId.js'
 import { AppError } from '../utils/apiResponse.js'
-
-// Same literal union as the `bloodGroup` enum on the Patient schema — kept
-// in sync manually since Mongoose doesn't export enum types automatically.
-type BloodGroup = 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-' | 'UNKNOWN'
+import type { BloodGroup } from '../types/patient.js'
 
 // Shape accepted for both creating and updating a patient — matches the Zod
 // schemas in schemas/patient.ts (which validate this before it reaches here).
@@ -33,8 +30,18 @@ export async function createPatient(input: PatientInput) {
 // against the text index defined on the Patient schema (name, patientNumber,
 // phone). VOIDED (soft-deleted) patients are excluded unless explicitly requested.
 export async function searchPatients(opts: { search?: string; page?: number; limit?: number }) {
-  const page = Math.max(1, opts.page ?? 1)
-  const limit = Math.min(100, Math.max(1, opts.limit ?? 20)) // cap page size to avoid huge unbounded queries
+  // `Number.isFinite` (not just `?? `) is required here: the controller
+  // passes `Number(req.query.page)` straight through, and `Number("abc")`
+  // is `NaN` — a "truthy-ish" value that `??` does NOT replace (only `null`/
+  // `undefined` trigger `??`'s fallback). Without this check, garbage input
+  // like `?page=abc` would flow through as NaN into `.skip()/.limit()`
+  // below, which the MongoDB driver rejects with an uncaught error. Instead,
+  // invalid/missing input quietly falls back to the same defaults as before.
+  const page = Number.isFinite(opts.page) && opts.page! > 0 ? Math.floor(opts.page!) : 1
+  const limit =
+    Number.isFinite(opts.limit) && opts.limit! > 0
+      ? Math.min(100, Math.floor(opts.limit!)) // cap page size to avoid huge unbounded queries
+      : 20
 
   const filter: Record<string, unknown> = { status: 'ACTIVE' }
   if (opts.search) {

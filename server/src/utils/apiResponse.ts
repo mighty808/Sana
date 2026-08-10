@@ -28,3 +28,14 @@ export class AppError extends Error {
     this.name = 'AppError'
   }
 }
+
+// True if `err` is a MongoDB duplicate-key error (code 11000) — thrown when
+// an insert/update violates a `unique: true` schema constraint (e.g. two
+// departments with the same name, two users with the same email). Services
+// that write to a unique field should catch this and re-throw as an
+// AppError(..., 409, '<SOMETHING>_EXISTS') instead of letting the raw driver
+// error reach the client as a generic 500. Shared here so this check is
+// written once instead of duplicated in every service that needs it.
+export function isDuplicateKeyError(err: unknown): boolean {
+  return Boolean(err && typeof err === 'object' && 'code' in err && err.code === 11000)
+}

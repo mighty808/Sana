@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { auth } from '../middleware/auth.js'
 import { requirePermission } from '../middleware/rbac.js'
 import { validate } from '../middleware/validate.js'
+import { validateObjectId } from '../middleware/validateObjectId.js'
 import { createPatientSchema, updatePatientSchema } from '../schemas/patient.js'
 import * as ctrl from '../controllers/patient.controller.js'
 
@@ -88,8 +89,15 @@ router.get('/', auth, requirePermission('patient.read'), ctrl.search)
  *       404:
  *         description: Patient not found.
  */
-router.get('/:id', auth, requirePermission('patient.read'), ctrl.getById)
-router.patch('/:id', auth, requirePermission('patient.update'), validate(updatePatientSchema), ctrl.update)
+router.get('/:id', auth, validateObjectId('id'), requirePermission('patient.read'), ctrl.getById)
+router.patch(
+  '/:id',
+  auth,
+  validateObjectId('id'),
+  requirePermission('patient.update'),
+  validate(updatePatientSchema),
+  ctrl.update,
+)
 
 /**
  * @openapi
@@ -109,6 +117,6 @@ router.patch('/:id', auth, requirePermission('patient.update'), validate(updateP
  *       200:
  *         description: Patient plus their timeline of events.
  */
-router.get('/:id/timeline', auth, requirePermission('patient.read'), ctrl.timeline)
+router.get('/:id/timeline', auth, validateObjectId('id'), requirePermission('patient.read'), ctrl.timeline)
 
 export default router

@@ -1,6 +1,5 @@
 import { z } from 'zod'
-
-const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'UNKNOWN'] as const
+import { BLOOD_GROUPS } from '../types/patient.js'
 
 // Validates POST /patients request bodies (registering a new patient).
 // `z.coerce.date()` accepts the ISO date string the frontend sends (e.g.
