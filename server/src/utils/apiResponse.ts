@@ -1,4 +1,5 @@
 import type { Response } from 'express'
+import { isValidObjectId } from 'mongoose'
 
 // Sends a successful API response in Sana's standard shape: { success: true, data }.
 // `status` defaults to 200 but callers can pass 201 (created), etc.
@@ -38,4 +39,18 @@ export class AppError extends Error {
 // written once instead of duplicated in every service that needs it.
 export function isDuplicateKeyError(err: unknown): boolean {
   return Boolean(err && typeof err === 'object' && 'code' in err && err.code === 11000)
+}
+
+// Throws a clean 400 AppError if `id` isn't a syntactically valid MongoDB
+// ObjectId. Route-level `:id` params are already covered by
+// middleware/validateObjectId.ts, but request BODIES can also contain
+// ObjectId references (e.g. an appointment's `patient`/`doctor`/`department`
+// fields) which Zod's `z.string()` alone doesn't validate as ObjectIds.
+// Without this check, passing garbage like `{ "patient": "not-an-id" }`
+// would reach Mongoose and throw an uncaught CastError (500) instead of a
+// clean, expected 400 — the same class of bug the route-param middleware fixes.
+export function assertValidObjectId(id: string, label: string): void {
+  if (!isValidObjectId(id)) {
+    throw new AppError(`'${label}' is not a valid id`, 400, 'INVALID_ID')
+  }
 }
