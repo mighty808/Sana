@@ -1,6 +1,8 @@
 import { Router } from 'express'
 import authRoutes from './auth.routes.js'
 import userRoutes from './user.routes.js'
+import patientRoutes from './patient.routes.js'
+import departmentRoutes from './department.routes.js'
 
 // This is the single top-level router for the whole API. app.ts mounts it
 // at /api/v1, so every path below becomes /api/v1/<path>. Each feature module
@@ -16,9 +18,10 @@ router.get('/health', (_req, res) => {
 
 router.use('/auth', authRoutes)
 router.use('/users', userRoutes)
+router.use('/patients', patientRoutes)
+router.use('/departments', departmentRoutes)
 
 // Route modules are mounted here as each phase lands:
-// router.use('/patients', patientRoutes)
 // router.use('/appointments', appointmentRoutes)
 // router.use('/encounters', encounterRoutes)
 // router.use('/lab-orders', labOrderRoutes)
