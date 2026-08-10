@@ -1,0 +1,40 @@
+# dependencies
+node_modules/
+**/node_modules/
+
+# env
+.env
+.env.local
+**/.env
+!.env.example
+
+# build output
+dist/
+build/
+client/dist/
+server/dist/
+
+# python
+ai-service/__pycache__/
+ai-service/venv/
+ai-service/.venv/
+**/__pycache__/
+*.pyc
+
+# vector db local storage
+ai-service/chroma_db/
+
+# logs
+*.log
+npm-debug.log*
+
+# editor
+.vscode/
+.idea/
+
+# os
+.DS_Store
+Thumbs.db
+
+# testing
+coverage/
