@@ -10,11 +10,18 @@ export async function create(req: Request, res: Response) {
   return ok(res, department, 201)
 }
 
-// GET /departments — any authenticated user can view the list (e.g. to pick
-// a department when booking an appointment). `?all=true` additionally
-// includes INACTIVE departments, meant for the admin management screen.
+// GET /departments — any authenticated user can view the ACTIVE list (e.g.
+// to pick a department when booking an appointment). `?all=true` additionally
+// includes INACTIVE departments — restricted to callers whose role actually
+// has 'department.manage' (Admin), since that's the same permission
+// required to create/edit departments; without this check, any logged-in
+// role (including PATIENT) could pass ?all=true and see data meant only for
+// the admin management screen. A caller without the permission who passes
+// ?all=true is not an error — the flag is just silently ignored and they
+// get the normal ACTIVE-only list.
 export async function list(req: Request, res: Response) {
-  const includeInactive = req.query.all === 'true'
+  const canManage = req.user?.role?.permissions?.includes('department.manage') ?? false
+  const includeInactive = canManage && req.query.all === 'true'
   const departments = await departmentService.listDepartments(includeInactive)
   return ok(res, departments)
 }

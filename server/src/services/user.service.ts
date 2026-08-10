@@ -15,14 +15,17 @@ export async function createUser(input: {
   phone?: string
   role: RoleName
 }) {
-  // Enforce email uniqueness explicitly (in addition to the DB-level unique
-  // index) so we can return a clean 409 error instead of a raw Mongo duplicate-key error.
-  const existing = await User.findOne({ email: input.email })
+  // These two lookups don't depend on each other, so run them concurrently
+  // instead of paying for two sequential round trips to MongoDB.
+  const [existing, role] = await Promise.all([
+    // Enforce email uniqueness explicitly (in addition to the DB-level unique
+    // index) so we can return a clean 409 error instead of a raw Mongo duplicate-key error.
+    User.findOne({ email: input.email }),
+    // Look up the Role document matching the requested role name — this must
+    // have been created by the seed script (utils/seed.ts) beforehand.
+    Role.findOne({ name: input.role }),
+  ])
   if (existing) throw new AppError('Email already in use', 409, 'EMAIL_TAKEN')
-
-  // Look up the Role document matching the requested role name — this must
-  // have been created by the seed script (utils/seed.ts) beforehand.
-  const role = await Role.findOne({ name: input.role })
   if (!role) throw new AppError('Role not found — run the seed script', 500, 'ROLE_NOT_FOUND')
 
   const passwordHash = await hashPassword(input.password)
