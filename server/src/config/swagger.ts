@@ -7,10 +7,11 @@ import swaggerJsdoc from 'swagger-jsdoc'
 // separate file that drifts out of sync.
 //
 // Coverage note: auth, users, patients, departments, appointments,
-// encounters, lab orders/results, and notifications routes are documented
-// with @openapi blocks so far (Phases 2-6). Each later phase should add its
-// own blocks to its route files as those endpoints are built, rather than
-// documenting everything upfront before the endpoints exist.
+// encounters, lab orders/results, notifications, and billing (invoices/
+// payments) routes are documented with @openapi blocks so far (Phases
+// 2-7). Each later phase should add its own blocks to its route files as
+// those endpoints are built, rather than documenting everything upfront
+// before the endpoints exist.
 export const swaggerSpec = swaggerJsdoc({
   definition: {
     openapi: '3.0.3',
