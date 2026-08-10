@@ -13,10 +13,15 @@ export async function create(req: Request, res: Response) {
   return ok(res, invoice, 201)
 }
 
-// GET /invoices — requires 'invoice.read' (Admin, Patient — see
-// listInvoices() for how each is scoped).
+// GET /invoices?page=&limit= — requires 'invoice.read' (Admin, Patient —
+// see listInvoices() for how each is scoped; pagination only applies to
+// the Admin "see everything" branch).
 export async function list(req: Request, res: Response) {
-  const invoices = await invoiceService.listInvoices(req.user!)
+  const { page, limit } = req.query
+  const invoices = await invoiceService.listInvoices(req.user!, {
+    page: page ? Number(page) : undefined,
+    limit: limit ? Number(limit) : undefined,
+  })
   return ok(res, invoices)
 }
 

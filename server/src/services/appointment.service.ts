@@ -6,6 +6,7 @@ import { generateId } from '../utils/generateId.js'
 import { AppError, assertValidObjectId } from '../utils/apiResponse.js'
 import { PUBLIC_USER_FIELDS, type AuthedUser } from '../types/user.js'
 import { notify } from './notification.service.js'
+import { getPatientForUser } from './patient.service.js'
 
 interface CreateAppointmentInput {
   patient: string
@@ -106,7 +107,7 @@ export async function listAppointments(user: AuthedUser) {
   }
 
   if (roleName === 'PATIENT') {
-    const patient = await Patient.findOne({ user: user.id })
+    const patient = await getPatientForUser(user.id)
     if (!patient) return []
     return Appointment.find({ patient: patient.id })
       .populate([{ path: 'doctor', select: PUBLIC_USER_FIELDS }, { path: 'department' }])

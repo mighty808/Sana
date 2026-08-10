@@ -1,10 +1,10 @@
 import { Types } from 'mongoose'
 import { LabResult, type LabResultInterpretation } from '../models/LabResult.js'
 import { LabOrder, type LabOrderDoc } from '../models/LabOrder.js'
-import { Patient } from '../models/Patient.js'
 import { AppError, assertValidObjectId } from '../utils/apiResponse.js'
 import type { AuthedUser } from '../types/user.js'
 import { notify } from './notification.service.js'
+import { getPatientForUser } from './patient.service.js'
 
 interface CreateLabResultInput {
   labOrder: string
@@ -164,7 +164,7 @@ export async function releaseLabResult(id: string, releasedBy: string) {
 // unconditionally regardless of how broad staff-to-staff access is elsewhere.
 export async function listLabResults(user: AuthedUser) {
   if (user.role.name === 'PATIENT') {
-    const patient = await Patient.findOne({ user: user.id })
+    const patient = await getPatientForUser(user.id)
     if (!patient) return []
     return LabResult.find({ patient: patient.id, status: 'RELEASED' }).sort({ resultedAt: -1 })
   }

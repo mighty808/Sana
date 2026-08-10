@@ -41,6 +41,14 @@ const invoiceSchema = new Schema(
     amountPaid: { type: Number, required: true, default: 0, min: 0 },
     balance: { type: Number, required: true },
     status: { type: String, enum: INVOICE_STATUSES, default: 'UNPAID' },
+    // True for every status except VOIDED. Exists purely so the partial
+    // unique index below can express "unique among non-voided invoices" —
+    // MongoDB's partialFilterExpression only supports simple equality-style
+    // conditions ($eq, $exists, $gt/$gte/$lt/$lte), not $ne or $in, so
+    // there's no way to write the filter directly against `status`. Any
+    // future code that sets `status: 'VOIDED'` MUST also set `isActive:
+    // false` in the same update, or this index stops enforcing the invariant.
+    isActive: { type: Boolean, default: true },
   },
   { timestamps: true },
 )
@@ -49,11 +57,15 @@ const invoiceSchema = new Schema(
 // invoices" view (status != PAID).
 invoiceSchema.index({ patient: 1, createdAt: -1 })
 invoiceSchema.index({ status: 1 })
-// One invoice per encounter is enforced at the application layer (see
-// invoice.service.ts) rather than a unique index here, since "one encounter
-// already has a non-voided invoice" is a conditional rule (a VOIDED
-// invoice's encounter CAN get a new one), which a plain unique index can't express.
-invoiceSchema.index({ encounter: 1 })
+// Enforces "at most one non-VOIDED invoice per encounter" AT THE DATABASE
+// LEVEL, not just via invoice.service.ts's findOne-then-create check (which
+// on its own has a race: two near-simultaneous requests can both pass that
+// check before either has written, both succeeding). A PARTIAL unique
+// index — unique on `encounter`, but only among documents where
+// `isActive: true` — is what makes this a conditional rule instead of a
+// blanket one: a VOIDED invoice (isActive: false) falls outside the
+// index's filter, so its encounter CAN still get a replacement invoice.
+invoiceSchema.index({ encounter: 1 }, { unique: true, partialFilterExpression: { isActive: true } })
 
 export type InvoiceAttrs = InferSchemaType<typeof invoiceSchema>
 export type InvoiceDoc = HydratedDocument<InvoiceAttrs>

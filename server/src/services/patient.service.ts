@@ -75,3 +75,13 @@ export async function updatePatient(id: string, updates: Partial<PatientInput>) 
   if (!patient) throw new AppError('Patient not found', 404, 'PATIENT_NOT_FOUND')
   return patient
 }
+
+// Finds the Patient record linked to a given login account, if one exists
+// (via Patient.user — see the field's comment on models/Patient.ts). Used
+// everywhere a PATIENT-role caller needs their own patient identity resolved
+// before filtering a query to "their own" records — appointments, lab
+// results, and invoices all had this exact lookup duplicated verbatim
+// before being consolidated into this one shared helper.
+export async function getPatientForUser(userId: string) {
+  return Patient.findOne({ user: userId })
+}
