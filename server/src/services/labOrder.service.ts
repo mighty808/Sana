@@ -1,4 +1,4 @@
-import { LabOrder } from '../models/LabOrder.js'
+import { LabOrder, LAB_ORDER_STATUSES } from '../models/LabOrder.js'
 import { LabResult } from '../models/LabResult.js'
 import { Encounter } from '../models/Encounter.js'
 import { generateId } from '../utils/generateId.js'
@@ -48,7 +48,20 @@ export async function createLabOrder(input: CreateLabOrderInput, doctorId: strin
 export async function listLabOrders(user: AuthedUser, statusFilter?: string) {
   const filter: Record<string, unknown> = {}
   if (user.role.name === 'DOCTOR') filter.doctor = user.id
-  if (statusFilter) filter.status = statusFilter
+  if (statusFilter) {
+    // Reject an unrecognized/mistyped status value with a clear 400 instead
+    // of silently matching zero documents — an empty list and "your filter
+    // value was invalid" look identical to the caller otherwise, masking a
+    // client bug (e.g. wrong case, stale enum) as "no orders."
+    if (!LAB_ORDER_STATUSES.includes(statusFilter as (typeof LAB_ORDER_STATUSES)[number])) {
+      throw new AppError(
+        `Invalid status filter '${statusFilter}' — expected one of ${LAB_ORDER_STATUSES.join(', ')}`,
+        400,
+        'INVALID_STATUS',
+      )
+    }
+    filter.status = statusFilter
+  }
 
   return LabOrder.find(filter)
     .populate([{ path: 'patient' }, { path: 'doctor', select: PUBLIC_USER_FIELDS }])
@@ -56,6 +69,14 @@ export async function listLabOrders(user: AuthedUser, statusFilter?: string) {
 }
 
 // Fetches one lab order with all results entered against it so far.
+// Deliberately NOT scoped to the requesting doctor's own orders (unlike
+// listLabOrders above) — this matches the same precedent set for
+// GET /encounters/:id in Phase 4: list views are personalized queues, but a
+// direct-by-id lookup (e.g. following a link) stays broadly accessible to
+// any user holding the role permission, not restricted to the assigned
+// doctor. That was an explicit choice made with the project owner for
+// encounters, and is applied consistently here rather than re-litigated
+// per resource type.
 export async function getLabOrderById(id: string) {
   const order = await LabOrder.findById(id).populate([
     { path: 'patient' },

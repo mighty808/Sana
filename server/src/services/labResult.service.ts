@@ -1,6 +1,6 @@
 import { Types } from 'mongoose'
 import { LabResult, type LabResultInterpretation } from '../models/LabResult.js'
-import { LabOrder } from '../models/LabOrder.js'
+import { LabOrder, type LabOrderDoc } from '../models/LabOrder.js'
 import { Patient } from '../models/Patient.js'
 import { AppError, assertValidObjectId } from '../utils/apiResponse.js'
 import type { AuthedUser } from '../types/user.js'
@@ -15,26 +15,66 @@ interface CreateLabResultInput {
   notes?: string
 }
 
+// Escapes regex metacharacters in user-supplied text before it's interpolated
+// into a RegExp — otherwise a testName like "CBC (fasting)" would be
+// interpreted as a regex group instead of literal parentheses, and could
+// throw on truly malformed input (e.g. an unbalanced bracket).
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 // Enters a result for one test within a lab order (staff-only — Admin in
-// this MVP). `testName` must match one of the tests actually requested on
-// the order, so a result can't be entered for a test nobody ordered.
-// After creating the result, the matching test item on the order is marked
-// COMPLETED and the order's overall status is recomputed: PROCESSING once
-// at least one test is done, COMPLETED once every test has a result.
+// this MVP). `testName` must match a currently-PENDING test on the order —
+// matching by name AND status (not name alone) means an order with a
+// repeated test name (e.g. two "CBC" entries — nothing forbids that) fills
+// its slots one at a time correctly, instead of always re-matching the
+// first same-named item regardless of whether it's already been resulted.
+//
+// The match-and-complete step below is a single atomic
+// `findOneAndUpdate(...)`, not a load -> mutate -> `.save()` cycle. That
+// matters under concurrency: two staff entering results for two different
+// tests on the same order at the same time would, with a load/save
+// pattern, both load the order before either saved, and the second
+// `.save()` would throw an uncaught Mongoose VersionError (optimistic
+// concurrency conflict) — turning a legitimate second result entry into a
+// 500. An atomic update has no such conflict, since MongoDB serializes
+// concurrent writes to the same document itself.
 export async function createLabResult(input: CreateLabResultInput, performedBy: string) {
   assertValidObjectId(input.labOrder, 'labOrder')
 
-  const order = await LabOrder.findById(input.labOrder)
-  if (!order) throw new AppError('Lab order not found', 404, 'LAB_ORDER_NOT_FOUND')
+  const testNamePattern = new RegExp(`^${escapeRegExp(input.testName.trim())}$`, 'i')
 
-  const testItem = order.tests.find((t) => t.testName.toLowerCase() === input.testName.toLowerCase())
-  if (!testItem) {
-    throw new AppError(`'${input.testName}' was not requested on this lab order`, 400, 'TEST_NOT_ORDERED')
+  // Uses the plain positional `$` operator (`tests.$.status`), not
+  // `arrayFilters` + `$[identifier]` — that distinction matters here:
+  // `arrayFilters` updates EVERY array element matching the filter, while
+  // `$` updates only the FIRST one matched by the query itself. With a
+  // duplicate test name, both PENDING "CBC" items match the same filter —
+  // `arrayFilters` would flip both to COMPLETED in one write (verified this
+  // the hard way), silently completing an order's second slot without a
+  // second result ever being entered for it. `$` correctly touches just one.
+  const updatedOrder = await LabOrder.findOneAndUpdate(
+    { _id: input.labOrder, tests: { $elemMatch: { testName: testNamePattern, status: 'PENDING' } } },
+    { $set: { 'tests.$.status': 'COMPLETED' } },
+    { returnDocument: 'after' },
+  )
+
+  if (!updatedOrder) {
+    // The update matched nothing — either the order doesn't exist at all,
+    // or it exists but has no PENDING test with that name (wrong name, or
+    // every matching slot was already resulted). Distinguish the two so
+    // the error message is actually useful.
+    const orderExists = await LabOrder.exists({ _id: input.labOrder })
+    if (!orderExists) throw new AppError('Lab order not found', 404, 'LAB_ORDER_NOT_FOUND')
+    throw new AppError(
+      `'${input.testName}' has no pending slot on this lab order (not requested, or already resulted)`,
+      400,
+      'TEST_NOT_ORDERED',
+    )
   }
 
   const result = await LabResult.create({
     labOrder: input.labOrder,
-    patient: order.patient,
+    patient: updatedOrder.patient,
     performedBy,
     testName: input.testName,
     resultValue: input.resultValue,
@@ -44,18 +84,33 @@ export async function createLabResult(input: CreateLabResultInput, performedBy: 
     notes: input.notes,
   })
 
-  // Update the matching test's status and roll up the order's overall
-  // status — mutating the already-loaded `order` document in place and
-  // saving it, rather than a separate findOneAndUpdate, since we need to
-  // inspect ALL of its test items' statuses together to decide the new
-  // overall status (a single-field $set can't express "COMPLETED iff every
-  // test item is COMPLETED").
-  testItem.status = 'COMPLETED'
-  const allDone = order.tests.every((t) => t.status === 'COMPLETED')
-  order.status = allDone ? 'COMPLETED' : 'PROCESSING'
-  await order.save()
+  await rollUpLabOrderStatus(updatedOrder)
 
   return result
+}
+
+// Recomputes and persists a lab order's overall status from its current
+// test items — COMPLETED once every test item is COMPLETED, PROCESSING
+// otherwise (this is only ever called right after a test was just marked
+// COMPLETED above, so it never needs to consider reverting to ORDERED).
+// Factored into its own function — rather than inlined in createLabResult —
+// so any future code path that can change test-item statuses (e.g. a
+// future void/correct-result endpoint) reuses this instead of re-deriving
+// the same "every test done?" logic a second time.
+//
+// This second write is a separate atomic update from the one in
+// createLabResult above, not part of one bigger transaction — under heavy
+// concurrent result entry on the SAME order, it's theoretically possible
+// for the derived `status` field to briefly reflect a slightly stale
+// PROCESSING/COMPLETED value if two roll-ups interleave. That's a much
+// narrower and self-correcting edge case (resolved by the next result
+// entered) than the VersionError crash this refactor eliminates, and a
+// real hospital's lab results for one order are entered by one person
+// working through the order, not raced by multiple staff — so the
+// simpler two-step approach here is a deliberate tradeoff, not an oversight.
+async function rollUpLabOrderStatus(order: LabOrderDoc): Promise<void> {
+  const allDone = order.tests.every((t) => t.status === 'COMPLETED')
+  await LabOrder.findByIdAndUpdate(order.id, { status: allDone ? 'COMPLETED' : 'PROCESSING' })
 }
 
 // Releases a result, making it visible to the patient (see the `status`
