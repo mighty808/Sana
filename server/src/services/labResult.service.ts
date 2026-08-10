@@ -4,6 +4,7 @@ import { LabOrder, type LabOrderDoc } from '../models/LabOrder.js'
 import { Patient } from '../models/Patient.js'
 import { AppError, assertValidObjectId } from '../utils/apiResponse.js'
 import type { AuthedUser } from '../types/user.js'
+import { notify } from './notification.service.js'
 
 interface CreateLabResultInput {
   labOrder: string
@@ -132,6 +133,22 @@ export async function releaseLabResult(id: string, releasedBy: string) {
   result.releasedBy = new Types.ObjectId(releasedBy)
   result.releasedAt = new Date()
   await result.save()
+
+  // Real-time push per the blueprint's "lab.result.ready — doctor gets
+  // alert when lab result is complete" — fires on RELEASE specifically
+  // (not on result entry), matching the demo script's step order: Admin
+  // enters results -> releases -> doctor receives the notification.
+  const order = await LabOrder.findById(result.labOrder)
+  if (order) {
+    await notify(order.doctor.toString(), {
+      type: 'lab.result.ready',
+      title: 'Lab result ready',
+      message: `${result.testName} result for order ${order.labOrderNumber} has been released`,
+      entityType: 'LabResult',
+      entityId: result.id,
+    })
+  }
+
   return result
 }
 

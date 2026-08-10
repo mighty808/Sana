@@ -5,6 +5,7 @@ import { Department } from '../models/Department.js'
 import { generateId } from '../utils/generateId.js'
 import { AppError, assertValidObjectId } from '../utils/apiResponse.js'
 import { PUBLIC_USER_FIELDS, type AuthedUser } from '../types/user.js'
+import { notify } from './notification.service.js'
 
 interface CreateAppointmentInput {
   patient: string
@@ -69,7 +70,21 @@ export async function createAppointment(input: CreateAppointmentInput) {
   }
 
   const appointmentNumber = await generateId('APT')
-  return Appointment.create({ ...input, appointmentNumber })
+  const appointment = await Appointment.create({ ...input, appointmentNumber })
+
+  // Real-time push per the blueprint's "appointment.created — doctor sees
+  // new booking instantly" — the assigned doctor gets a live notification
+  // (and a persisted one in GET /notifications) the moment it's booked,
+  // without needing to refresh their dashboard.
+  await notify(input.doctor, {
+    type: 'appointment.created',
+    title: 'New appointment booked',
+    message: `${appointment.appointmentNumber} on ${appointment.date.toDateString()} at ${appointment.startTime}`,
+    entityType: 'Appointment',
+    entityId: appointment.id,
+  })
+
+  return appointment
 }
 
 // Lists appointments, filtered according to the requesting user's role —
