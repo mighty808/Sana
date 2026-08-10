@@ -138,7 +138,10 @@ export async function releaseLabResult(id: string, releasedBy: string) {
   // alert when lab result is complete" — fires on RELEASE specifically
   // (not on result entry), matching the demo script's step order: Admin
   // enters results -> releases -> doctor receives the notification.
-  const order = await LabOrder.findById(result.labOrder)
+  // Projected to just the two fields notify() actually needs below —
+  // no reason to pull the whole order document (including its full tests
+  // array) across the wire on every single result release.
+  const order = await LabOrder.findById(result.labOrder).select('doctor labOrderNumber')
   if (order) {
     await notify(order.doctor.toString(), {
       type: 'lab.result.ready',
