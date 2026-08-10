@@ -10,6 +10,7 @@ import labResultRoutes from './labResult.routes.js'
 import notificationRoutes from './notification.routes.js'
 import invoiceRoutes from './invoice.routes.js'
 import paymentRoutes from './payment.routes.js'
+import aiRoutes from './ai.routes.js'
 
 // This is the single top-level router for the whole API. app.ts mounts it
 // at /api/v1, so every path below becomes /api/v1/<path>. Each feature module
@@ -34,9 +35,9 @@ router.use('/lab-results', labResultRoutes)
 router.use('/notifications', notificationRoutes)
 router.use('/invoices', invoiceRoutes)
 router.use('/payments', paymentRoutes)
+router.use('/ai', aiRoutes)
 
 // Route modules are mounted here as each phase lands:
-// router.use('/ai', aiRoutes)
 // router.use('/analytics', analyticsRoutes)
 // router.use('/audit-logs', auditLogRoutes)
 

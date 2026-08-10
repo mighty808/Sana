@@ -1,7 +1,15 @@
 fastapi>=0.115
 uvicorn[standard]>=0.32
 pydantic>=2.9
+python-dotenv>=1.0
+
+# RAG pipeline
 langchain>=0.3
 langchain-groq>=0.2
-python-dotenv>=1.0
+langchain-chroma>=0.2
+langchain-huggingface>=0.1
 chromadb>=0.5
+# Local embedding model (sentence-transformers) — no external API key
+# needed, unlike OpenAI embeddings. Downloads a small (~80MB) model to a
+# local cache on first run.
+sentence-transformers>=3.0

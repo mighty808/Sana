@@ -28,9 +28,19 @@ npm run dev
 
 # Terminal 4 — AI Service
 cd ai-service
-pip install -r requirements.txt
-python main.py
+python -m venv venv
+./venv/Scripts/pip install -r requirements.txt   # ~2GB (torch + transformers) — first install is slow
+./venv/Scripts/python -m uvicorn main:app --port 8000
 ```
+
+The AI service needs `ai-service/.env` with a `GROQ_API_KEY` (get one free at
+console.groq.com) — copy the relevant lines from `.env.example`. On its
+**first** `/v1/consult` request, it downloads a small (~80MB) local embedding
+model from Hugging Face and seeds the vector store from
+`rag/knowledge_base.py` — this needs a working internet connection once, and
+is cached afterward (`ai-service/chroma_db/`, gitignored). If that first
+request hangs or fails, it's almost always a DNS/network hiccup reaching
+`huggingface.co`, not a code issue — retry once your connection is stable.
 
 | Service | URL |
 |---|---|
