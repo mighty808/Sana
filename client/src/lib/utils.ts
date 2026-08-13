@@ -8,3 +8,12 @@ import { twMerge } from 'tailwind-merge'
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
+
+// Narrows a reference field that's sometimes a populated object and
+// sometimes just its raw id string — several backend endpoints populate a
+// ref for some roles/branches but not others (Appointment.patient/doctor,
+// Invoice.patient, etc.), so every screen consuming one of those fields
+// needs this same check. Shared here instead of redefined per feature.
+export function isPopulated<T extends object>(ref: T | string): ref is T {
+  return typeof ref === 'object'
+}

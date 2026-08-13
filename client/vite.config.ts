@@ -27,6 +27,16 @@ export default defineConfig({
         target: 'http://localhost:3000',
         changeOrigin: true,
       },
+      // Socket.IO's handshake is a plain HTTP request that upgrades to a
+      // WebSocket — needs its own proxy entry (with ws: true) distinct from
+      // the REST '/api' one above, so the client can connect to the
+      // same-origin default path (no hardcoded backend URL) in both dev
+      // (via this proxy) and production (served from the same origin).
+      '/socket.io': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
 })
