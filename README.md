@@ -1,6 +1,6 @@
 # Sana
 
-Intelligent event-driven hospital management system with an AI-powered diagnostic decision-support agent (MediAssist AI).
+Intelligent event-driven hospital management system with an AI-powered diagnostic decision-support agent (Sana AI).
 
 Final-year project — Paakwesi Effah Aboagye, BSc Computer Science, University of Ghana.
 
@@ -47,9 +47,9 @@ request hangs or fails, it's almost always a DNS/network hiccup reaching
 | Frontend | http://localhost:5173 |
 | Backend | http://localhost:3000 |
 | Swagger | http://localhost:3000/api/docs |
-| MediAssist AI | http://localhost:8000 |
+| Sana AI | http://localhost:8000 |
 | MongoDB | localhost:27017 |
 
 ## Build plan
 
-See task list — 11 phases, foundation through AI integration to final report. Core hospital platform (phases 1–7) ships before MediAssist AI integration (phase 8).
+See task list — 11 phases, foundation through AI integration to final report. Core hospital platform (phases 1–7) ships before Sana AI integration (phase 8).
