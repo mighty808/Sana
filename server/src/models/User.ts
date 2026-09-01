@@ -1,8 +1,8 @@
 import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose'
 
-// One document per hospital-system user — admin, doctor, nurse, or patient.
-// The actual permissions a user has come from their referenced Role, not
-// from anything stored directly on the User.
+// One document per hospital-system user — admin, doctor, nurse, patient,
+// or lab tech. The actual permissions a user has come from their
+// referenced Role, not from anything stored directly on the User.
 const userSchema = new Schema(
   {
     // Login identifier. Lowercased + unique so "Doc@Sana.test" and
