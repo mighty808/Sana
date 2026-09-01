@@ -16,7 +16,8 @@ const router = Router()
  *     description: >
  *       Response shape depends on the caller's role: Admin gets system-wide
  *       counts, Doctor gets their own workload, Nurse gets today's activity,
- *       Patient gets their own upcoming appointments/notifications/balance.
+ *       Patient gets their own upcoming appointments/notifications/balance,
+ *       Lab Technician gets the lab queue's outstanding/awaiting-release counts.
  *     responses:
  *       200:
  *         description: Dashboard summary for the caller's role.
