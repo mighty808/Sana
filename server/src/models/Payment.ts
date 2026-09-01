@@ -19,8 +19,8 @@ const paymentSchema = new Schema(
     // terminal's receipt number, an insurance claim number, etc. Optional
     // since a cash payment often has nothing to reference.
     reference: { type: String, trim: true },
-    // Admin in this MVP (no separate Billing Officer role — see blueprint
-    // section 1.3, same reasoning as LabResult.performedBy).
+    // In practice this is always an Admin, since there's no separate
+    // Billing Officer role — the same reasoning as LabResult.performedBy.
     receivedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     paidAt: { type: Date, required: true, default: Date.now },
   },
