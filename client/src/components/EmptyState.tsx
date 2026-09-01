@@ -9,9 +9,9 @@ interface EmptyStateProps {
   onAction?: () => void
 }
 
-// The one empty-state shape used wherever a list has nothing in it yet —
-// per the spec, a quiet centered icon + heading + subtext, with an
-// optional CTA, never a decorative illustration.
+// This is the one "nothing here yet" layout used wherever a list is empty:
+// a quiet, centered icon, heading, and subtext, with an optional action
+// button. It never uses a decorative illustration.
 export function EmptyState({ icon: Icon, title, description, actionLabel, onAction }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border py-16 text-center">
