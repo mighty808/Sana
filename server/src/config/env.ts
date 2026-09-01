@@ -32,6 +32,6 @@ export const env = {
   jwtAccessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
   // How long a refresh token (and its cookie) stays valid.
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
-  // Base URL of the separate FastAPI MediAssist AI microservice (Phase 8).
+  // Base URL of the separate FastAPI microservice that runs Sana AI.
   aiServiceUrl: process.env.AI_SERVICE_URL ?? 'http://localhost:8000',
 }
