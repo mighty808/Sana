@@ -29,7 +29,10 @@ const router = Router()
  *               reference: { type: string }
  *     responses:
  *       201:
- *         description: Payment recorded; the invoice's amountPaid/balance/status are updated atomically.
+ *         description: >
+ *           Payment recorded. The invoice's amountPaid, balance, and status
+ *           fields are all updated together as one operation, so the invoice
+ *           never ends up in a half-updated state.
  *       400:
  *         description: Payment exceeds the outstanding balance, or the invoice is voided.
  *       404:
