@@ -3,57 +3,46 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
-  Sana's design tokens — implements the approved design spec exactly
-  (Sana_Frontend_Design_Prompt.md): a clinical blue + white palette, light
-  everywhere (no dark sidebar), Outfit as the single type family. Values
-  below are the literal hex codes from that spec, which are themselves
-  Tailwind's own default slate/blue/red/green/amber scale — so plain
-  Tailwind utility classes (bg-blue-50, text-slate-500, border-red-200,
-  etc.) used directly in components will always match these tokens exactly.
-  Semantic status colors (success/warning/destructive) exist so state
+  Sana's design tokens — a clinical blue-and-white palette, light
+  everywhere (no dark sidebar), Outfit as the single type family. Ghost
+  borders (a subtle 1px line, see --border below) are this system's
+  primary way of separating sections, used ahead of shadows. Semantic
+  status colors (success/warning/destructive) exist so state
   (appointment/lab/invoice/AI-review status) never leans on the same blue
-  used for actions — "this is clickable" and "this is a status" must always
-  read as visually distinct, per the spec's accessibility requirement that
-  color is never the only signal (always paired with a text label/icon).
+  used for actions — "this is clickable" and "this is a status" must
+  always read as visually distinct, color never the only signal.
 */
 :root {
-  /* Tailwind's stock radius scale (rounded-md=6px, rounded-lg=8px) — the
-     spec is explicit: rounded-md for buttons/inputs, rounded-lg for cards,
-     rounded-full ONLY for badges/avatars/status pills. No bubbly
-     rounded-everything look. */
+  /* Buttons/inputs/containers get a universal 0.5rem (8px) radius — full
+     rounding is reserved for badges/avatars/status pills only. */
   --radius: 0.5rem;
 
-  --background: #F8FAFC; /* slate-50 — page background */
-  --foreground: #0F172A; /* slate-900 — headings, important text */
+  --background: #F7F8FA; /* cool gray page background */
+  --foreground: #101828; /* deep ink for headings */
 
-  --card: #FFFFFF;
-  --card-foreground: #0F172A;
+  --card: #FFFFFF; /* pure white surface */
+  --card-foreground: #101828;
   --popover: #FFFFFF;
-  --popover-foreground: #0F172A;
+  --popover-foreground: #101828;
 
-  /* Clinical blue — primary actions, active nav, links. */
-  --primary: #2563EB; /* blue-600 */
+  /* The one accent color — used exclusively for primary actions and active states. */
+  --primary: #2563EB;
   --primary-foreground: #FFFFFF;
 
-  /* Neutral secondary surface (generic secondary buttons/fills) — kept
-     plain slate rather than tinted blue, so it never gets confused with
-     the dedicated blue-50 "active/highlight" surface used by --accent. */
-  --secondary: #F1F5F9; /* slate-100 */
-  --secondary-foreground: #0F172A;
+  --secondary: #F1F5F9;
+  --secondary-foreground: #101828;
 
-  --muted: #F1F5F9; /* slate-100 */
-  --muted-foreground: #64748B; /* slate-500 — captions, secondary labels */
+  --muted: #F1F5F9;
+  --muted-foreground: #667085; /* muted gray for secondary/metadata text */
 
-  /* Very subtle blue highlight — row hover, active nav background, AI
-     panel fill. This is the ONE tinted surface in the whole system. */
-  --accent: #EFF6FF; /* blue-50 */
-  --accent-foreground: #1D4ED8; /* blue-700 */
+  --accent: #EFF6FF;
+  --accent-foreground: #1D4ED8;
 
-  --destructive: #DC2626; /* red-600 */
+  --destructive: #DC2626;
   --destructive-foreground: #FFFFFF;
 
-  --border: #E2E8F0; /* slate-200 */
-  --input: #E2E8F0;
+  --border: #EAECF0; /* ghost borders — the system's primary hierarchy tool, not shadows */
+  --input: #EAECF0;
   --ring: #2563EB;
 
   /* Semantic status colors — Badge/StatusBadge only, never primary
@@ -63,30 +52,29 @@
   --warning: #D97706; /* amber-600 */
   --warning-foreground: #FFFFFF;
 
-  /* Sidebar is explicitly white/light per spec — never the dark sidebar
-     shadcn ships by default. */
+  /* Sidebar is explicitly white/light — never the dark sidebar shadcn
+     ships by default. */
   --sidebar: #FFFFFF;
-  --sidebar-foreground: #334155; /* slate-700 — nav item text */
+  --sidebar-foreground: #344054;
   --sidebar-primary: #2563EB;
   --sidebar-primary-foreground: #FFFFFF;
-  --sidebar-accent: #EFF6FF; /* blue-50 — active nav item background */
-  --sidebar-accent-foreground: #2563EB; /* blue-600 — active nav item text */
-  --sidebar-border: #E2E8F0;
+  --sidebar-accent: #EFF6FF;
+  --sidebar-accent-foreground: #2563EB;
+  --sidebar-border: #EAECF0;
   --sidebar-ring: #2563EB;
 
   /* Single type family for the whole app — Outfit, both slots point at it
-     (no separate "display" face) since the spec calls for one geometric
-     sans everywhere, not a display/body pairing. */
+     (no separate "display" face). */
   --font-display: 'Outfit', system-ui, -apple-system, sans-serif;
   --font-sans: 'Outfit', system-ui, -apple-system, sans-serif;
 }
 
 /*
-  The spec is explicitly a light-only clinical interface (no dark sidebar,
+  This is explicitly a light-only clinical interface (no dark sidebar,
   bright airy surfaces throughout) — dark mode is kept only as a safe,
   low-contrast-preserving fallback for a user's OS-level preference, not a
   designed second theme. It's deliberately conservative rather than
-  inventing a second visual identity the spec never asked for.
+  inventing a second visual identity nothing here asked for.
 */
 .dark {
   --background: #0F172A;
