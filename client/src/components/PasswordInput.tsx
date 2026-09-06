@@ -3,10 +3,10 @@ import { Eye, EyeOff, Lock } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
-// A password field with a left lock icon and a right show/hide toggle —
-// used on every auth screen that takes a password, so the same small
-// interaction (and the same visual weight) shows up everywhere rather than
-// a bare unlabeled <Input type="password">.
+// A password field with a lock icon on the left and a show/hide toggle on
+// the right. It's used on every login-related screen that takes a password,
+// so the same interaction and look shows up everywhere, instead of a plain
+// unlabeled <Input type="password">.
 export function PasswordInput({ className, ...props }: ComponentProps<typeof Input>) {
   const [visible, setVisible] = useState(false)
 
