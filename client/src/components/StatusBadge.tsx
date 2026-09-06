@@ -1,11 +1,11 @@
 import { cn } from '@/lib/utils'
 
-// Every state enum in Sana's data model (appointment/lab-order/lab-result/
-// invoice/AI-review status) renders through this one component, so the
-// color mapping lives in exactly one place instead of being re-decided on
-// every screen. Per the design spec, color is never the only signal — the
-// text label is always visible alongside the tint, satisfying WCAG's
-// "don't encode meaning in color alone" requirement.
+// Every status value in Sana's data (appointment, lab order, lab result,
+// invoice, AI-review status, and so on) is displayed through this one
+// component, so the color for each status is decided in exactly one place
+// instead of separately on every screen. Color is never the only signal
+// here — the text label is always shown along with the color, which is
+// important for users who have trouble distinguishing colors.
 const STATUS_STYLES: Record<string, string> = {
   BOOKED: 'bg-blue-50 text-blue-700 border-blue-200',
   CONFIRMED: 'bg-sky-50 text-sky-700 border-sky-200',
