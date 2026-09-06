@@ -6,17 +6,20 @@ interface StatCardProps {
   icon: LucideIcon
   value: string | number
   label: string
-  // Optional trend — a signed percentage change vs. the prior period. Kept
-  // as a plain number (not pre-formatted) so the sign always drives both
-  // the arrow direction and the red/green color together, never separately.
+  // Optional trend — a percentage change compared to the prior period,
+  // where the sign (positive or negative) shows whether it went up or down.
+  // It's kept as a plain number, not already formatted, so that the sign
+  // always controls both the arrow direction and the red/green color
+  // together, instead of the two being set separately and possibly
+  // disagreeing with each other.
   trend?: number
   className?: string
 }
 
-// The one stat-card shape used across every role's dashboard (per the
-// design spec): a blue-tinted icon circle as the sole color accent, a bold
-// number, and a muted label — never a colored card background, so a grid
-// of these stays calm even when several sit side by side.
+// This is the one stat-card style used across every role's dashboard: a
+// blue-tinted icon circle as the only splash of color, a bold number, and a
+// muted label. The card background is never colored, so a grid of several
+// of these cards side by side still looks calm.
 export function StatCard({ icon: Icon, value, label, trend, className }: StatCardProps) {
   return (
     <div className={cn('rounded-lg border border-border bg-card p-5 shadow-sm', className)}>
