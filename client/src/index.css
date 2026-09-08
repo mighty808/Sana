@@ -177,3 +177,27 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* Printable documents (invoices, lab results): the printable content is
+   portalled straight to <body>, as a sibling of #root, as a plain block
+   (see components/PrintArea.tsx — deliberately NOT left nested inside
+   AppShell's height-capped `overflow-auto` main content area or a modal
+   dialog's `fixed` content, both of which clip a printed page instead of
+   paginating across it), and marked `.print-area`. The entire app (#root)
+   is hidden with `display: none` rather than `visibility: hidden` —
+   visibility keeps an element's box taking up space in the page's layout
+   even while invisible, so #root's own full height would still occupy the
+   top of the printed page before .print-area's content (after it in the
+   DOM) ever began, pushing everything onto page 2 and leaving page 1
+   blank. `display: none` removes it from layout entirely instead. */
+@media print {
+  #root {
+    display: none !important;
+  }
+  .print-area {
+    display: block !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
