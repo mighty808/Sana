@@ -7,32 +7,33 @@ import App from './App.tsx'
 import { AuthProvider } from '@/features/auth/AuthContext'
 import { Toaster } from '@/components/ui/sonner'
 
-// One shared TanStack Query client for the whole app — every feature's
-// data-fetching hooks (usePatients, useAppointments, etc., added in later
-// build steps) go through this same cache/client rather than each creating
-// their own.
+// One shared TanStack Query client for the whole app. Every feature's
+// data-fetching hooks (usePatients, useAppointments, etc.) use this same
+// cache instead of each creating their own.
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      // Sana's data changes via staff actions elsewhere in the app just as
-      // often as via the current user's own actions — a short staleTime
-      // (rather than the default "stale immediately") avoids refetching on
-      // every single component mount/tab-focus while still keeping data
-      // reasonably fresh for a clinical app where seeing current information matters.
+      // In Sana, data often changes because other staff members are making
+      // edits elsewhere in the app, not just because of what the current
+      // user is doing. A short staleTime means we don't refetch every time
+      // a component mounts or the browser tab regains focus, while still
+      // keeping the data fresh enough for a clinical app where seeing
+      // current information matters.
       staleTime: 30_000,
       retry: 1,
     },
   },
 })
 
-// Browser entry point — mounts the React tree into the <div id="root"> in
-// index.html. Provider order matters: QueryClientProvider first (so
-// AuthProvider's own API calls during boot can use it if needed later),
-// then BrowserRouter (routing), then AuthProvider (needs router context for
-// eventual redirects) wrapping <App/> — everything inside can call
-// useAuth(), useNavigate(), and TanStack Query hooks. StrictMode runs extra
-// dev-only checks (e.g. double-invoking effects) to surface bugs early; it
-// has no effect in production builds.
+// This is the browser entry point — it mounts the React app into the
+// <div id="root"> in index.html. The order of the providers below matters:
+// QueryClientProvider goes first, so AuthProvider's own API calls during
+// startup can use it if needed. Then BrowserRouter for routing. Then
+// AuthProvider, which needs router access for redirects, wrapping <App/>.
+// Because of this order, everything inside can call useAuth(), useNavigate(),
+// and TanStack Query hooks. StrictMode runs extra checks during development
+// only (like calling effects twice) to help catch bugs early. It has no
+// effect on the production build that users actually see.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
