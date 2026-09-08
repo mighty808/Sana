@@ -17,6 +17,7 @@ import { InvoicesPage } from '@/features/invoices/InvoicesPage'
 import { InvoiceDetailPage } from '@/features/invoices/InvoiceDetailPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
+import { ReferralsPage } from '@/features/referrals/ReferralsPage'
 import { AuditLogsPage } from '@/features/auditLogs/AuditLogsPage'
 import { NotificationsPage } from '@/features/notifications/NotificationsPage'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
@@ -83,6 +84,10 @@ function App() {
 
           <Route element={<ProtectedRoute permission="analytics.readTrends" />}>
             <Route path="/analytics" element={<AnalyticsPage />} />
+          </Route>
+
+          <Route element={<ProtectedRoute permission="referral.read" />}>
+            <Route path="/referrals" element={<ReferralsPage />} />
           </Route>
         </Route>
       </Route>
