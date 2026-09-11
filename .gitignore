@@ -38,3 +38,12 @@ Thumbs.db
 
 # testing
 coverage/
+client/playwright-report/
+client/test-results/
+client/e2e/.auth/
+# Note: client/e2e/__screenshots__/ is deliberately NOT ignored — those are the
+# visual-regression baselines the suite compares against, so they belong in git.
+
+# Local-only dev credentials. Lists a working password for every seeded test
+# account, so it must never reach the remote — keep it on disk, out of git.
+TEST_LOGINS.md
