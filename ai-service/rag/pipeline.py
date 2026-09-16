@@ -13,7 +13,9 @@ Here's the flow, step by step:
      and a disclaimer.
 """
 
+import hashlib
 import json
+import logging
 import os
 import re
 import time
@@ -24,6 +26,12 @@ from langchain_groq import ChatGroq
 from langchain_huggingface import HuggingFaceEmbeddings
 
 from rag.knowledge_base import DOCUMENTS
+
+# The service previously logged nothing at all, which made a production
+# failure a black box: a 503 reached Express with no record on this side of
+# what actually broke. uvicorn configures the root logger, so records emitted
+# here land in the same stream as its access log with no extra setup.
+logger = logging.getLogger("sana.rag")
 
 # This embedding model is small (about 80MB), fast, and runs locally
 # without needing an API key or a paid subscription to an embedding
@@ -69,13 +77,44 @@ _vectorstore: Chroma | None = None
 _llm: ChatGroq | None = None
 
 
+def knowledge_base_fingerprint() -> str:
+    """
+    A stable SHA-256 over the knowledge base's contents.
+
+    This is what makes an edit to rag/knowledge_base.py actually take effect.
+    The store used to be seeded only when it was empty, which meant that once
+    chroma_db/ existed on disk, every later edit to the knowledge base was
+    silently ignored — the service kept answering from the version that
+    happened to be embedded first, and nothing anywhere said so. Deleting the
+    folder by hand was the only fix, and only if you knew to do it.
+
+    Titles are included alongside the text because a title is what gets shown
+    as the source next to an answer and what rag/eval_data.py labels against,
+    so a retitled entry is a change worth re-embedding for.
+    """
+    digest = hashlib.sha256()
+    for doc in DOCUMENTS:
+        digest.update(doc["title"].encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update(doc["text"].encode("utf-8"))
+        digest.update(b"\x00")
+    return digest.hexdigest()
+
+
+# Key under which the fingerprint above is stored in the Chroma collection's
+# own metadata, so it travels with the persisted store rather than living in a
+# separate file that could get out of step with it.
+_FINGERPRINT_KEY = "sana_kb_fingerprint"
+
+
 def _get_vectorstore() -> Chroma:
     """
     Creates the Chroma vector store the first time it's needed (or loads it
-    from disk, if it was already saved there from a previous run), and
-    fills it with the starter knowledge base the very first time it's
-    empty. This is cached at the module level so the embedding model only
-    gets loaded once per running process, instead of once per request.
+    from disk, if it was already saved there from a previous run), and seeds
+    it from rag/knowledge_base.py whenever the persisted copy doesn't match
+    the knowledge base currently in the source tree. Cached at the module
+    level so the embedding model only gets loaded once per running process,
+    instead of once per request.
     """
     global _vectorstore
     if _vectorstore is not None:
@@ -88,18 +127,53 @@ def _get_vectorstore() -> Chroma:
         persist_directory=CHROMA_DIR,
     )
 
-    # `._collection` reaches into a private attribute of the Chroma
-    # wrapper, since it doesn't currently expose any public way to ask "how
-    # many documents are stored here". This is the workaround commonly used
-    # for exactly this kind of "only seed the store if it's still empty"
-    # check. If a future version of langchain_chroma removes or renames
-    # this attribute, this check will need to be updated to match.
-    if store._collection.count() == 0:
-        docs = [
-            Document(page_content=d["text"], metadata={"title": d["title"]})
-            for d in DOCUMENTS
-        ]
-        store.add_documents(docs)
+    fingerprint = knowledge_base_fingerprint()
+
+    # `._collection` reaches into a private attribute of the Chroma wrapper,
+    # since it doesn't expose a public way to read a collection's document
+    # count or its metadata. This is the workaround commonly used for exactly
+    # this kind of check. If a future version of langchain_chroma removes or
+    # renames this attribute, this block needs updating to match — which is
+    # why it's wrapped: a failure to *check* staleness should degrade to
+    # "re-seed anyway", never to an unanswerable request.
+    try:
+        collection = store._collection
+        count = collection.count()
+        stored_fingerprint = (collection.metadata or {}).get(_FINGERPRINT_KEY)
+    except Exception:  # noqa: BLE001 — see the comment above.
+        logger.exception("Could not inspect the vector store; re-seeding from scratch")
+        count, stored_fingerprint = 0, None
+
+    if count > 0 and stored_fingerprint == fingerprint:
+        logger.info("Vector store is current: %d passages, fingerprint %s", count, fingerprint[:12])
+    else:
+        if count > 0:
+            # The knowledge base changed under a populated store. Everything
+            # in it was embedded from the old text, so it all goes — adding
+            # the new documents alongside would leave the store answering
+            # from both versions at once.
+            logger.info(
+                "Knowledge base changed (stored %s, current %s) — re-seeding %d passages",
+                (stored_fingerprint or "none")[:12],
+                fingerprint[:12],
+                len(DOCUMENTS),
+            )
+            existing = collection.get(include=[])
+            if existing["ids"]:
+                collection.delete(ids=existing["ids"])
+        else:
+            logger.info("Vector store is empty — seeding %d passages", len(DOCUMENTS))
+
+        store.add_documents(
+            [
+                Document(page_content=d["text"], metadata={"title": d["title"]})
+                for d in DOCUMENTS
+            ]
+        )
+        # Written only after the documents land, so an interrupted seed leaves
+        # a fingerprint that still doesn't match and gets retried next boot,
+        # rather than a half-filled store marked as current.
+        store._collection.modify(metadata={_FINGERPRINT_KEY: fingerprint})
 
     _vectorstore = store
     return store
@@ -120,7 +194,23 @@ def _get_llm() -> ChatGroq:
         # used instead to leave that extra headroom — including for the
         # nurse acuity path below, whose JSON wrapper adds a little more
         # length on top of the guidance text itself.
-        _llm = ChatGroq(model=LLM_MODEL, temperature=0.2, max_tokens=700)
+        #
+        # `timeout` and `max_retries` exist to stay inside the caller's
+        # patience rather than the library's. Express aborts this request at
+        # 20s (server/src/services/ai.service.ts's AbortSignal.timeout) and
+        # shows "AI service unavailable"; without a limit here, Python never
+        # learned that and kept working on an answer nobody was waiting for,
+        # logging nothing. One retry at 15s each would exceed 20s, so the
+        # retry is only useful for a fast failure (a connection reset, a 5xx)
+        # — which is the case actually worth retrying. A slow response is not
+        # retried into a second slow response.
+        _llm = ChatGroq(
+            model=LLM_MODEL,
+            temperature=0.2,
+            max_tokens=700,
+            timeout=15,
+            max_retries=1,
+        )
     return _llm
 
 
@@ -326,6 +416,28 @@ def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> d
     # when nothing retrieved is actually relevant to the question.
     grounded_results = [(doc, score) for doc, score in results if score >= MIN_RELEVANCE_SCORE]
 
+    # Logged before the LLM call rather than after, so a request that later
+    # times out still leaves a record of what was retrieved for it. The top
+    # score and the grounded count are the two numbers that explain almost
+    # every "why did it answer that?" question: a confident-sounding answer
+    # with 0 grounded passages is the pipeline working as designed and the
+    # knowledge base not covering the question.
+    top_score = max((score for _doc, score in results), default=None)
+    logger.info(
+        "consult: retrieved=%d grounded=%d top_score=%s acuity=%s query=%.80r",
+        len(results),
+        len(grounded_results),
+        f"{top_score:.4f}" if top_score is not None else "n/a",
+        assess_acuity,
+        query,
+    )
+    if not grounded_results:
+        # Not a warning: refusing to ground an out-of-scope question is the
+        # correct behaviour, and the prompt tells the model to say so. It is
+        # worth its own line because a sudden run of these is the signature of
+        # a broken embedding model or an empty store.
+        logger.info("consult: nothing cleared MIN_RELEVANCE_SCORE=%s", MIN_RELEVANCE_SCORE)
+
     context_block = "\n\n".join(
         f"[{doc.metadata.get('title', 'Untitled')}]\n{doc.page_content}" for doc, _score in grounded_results
     )
@@ -360,13 +472,31 @@ def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> d
 
     response_time_ms = int((time.monotonic() - started) * 1000)
 
+    # The latency Express measures includes this plus HTTP overhead; logging
+    # it here is what separates "the model was slow" from "the network was".
+    logger.info(
+        "consult: completed in %dms (model=%s, acuity=%s)",
+        response_time_ms,
+        LLM_MODEL,
+        ACUITY_LEVEL_NAMES[acuity_level] if acuity_level is not None else "n/a",
+    )
+
     return {
         "diagnosticGuidance": guidance,
+        # Every retrieved passage is returned, including the ones filtered out
+        # of the prompt — a loosely-related hit is still worth showing, and
+        # hiding it would make the retrieval impossible to reason about from
+        # the outside. `grounded` is what keeps that honest: it says whether
+        # this passage was actually in front of the model when it answered.
+        # Without it the UI shows a 0.05-scoring passage the model never saw
+        # as though it were the source the answer came from, which in a
+        # clinical tool is a claim the system cannot support.
         "sources": [
             {
                 "title": doc.metadata.get("title", "Untitled"),
                 "excerpt": doc.page_content[:280],
                 "score": round(float(score), 4),
+                "grounded": score >= MIN_RELEVANCE_SCORE,
             }
             for doc, score in results
         ],
