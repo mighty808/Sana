@@ -63,18 +63,39 @@ export function AiResponseCard({ consultation, badge }: { consultation: AiConsul
         <p className="max-w-prose">{consultation.response.diagnosticGuidance}</p>
         {consultation.response.sources && consultation.response.sources.length > 0 && (
           <div className="flex flex-wrap gap-1.5 pt-1">
+            {/* Two visually distinct states, because these chips make a claim
+                about where the answer came from. A passage is returned
+                whenever it is among the nearest matches, but only the ones
+                that cleared the relevance threshold were actually put in
+                front of the model — and showing both identically tells the
+                doctor the AI read something it never saw.
+
+                `grounded === false` rather than `!grounded`: the field is
+                absent on consultations saved before it existed, and an
+                unknown provenance should render as the normal chip rather
+                than be asserted as "not used". */}
             {consultation.response.sources.map((source) => (
               <span
                 key={source.title}
-                className="rounded-full border border-border bg-white px-2 py-0.5 font-mono text-[10px] text-slate-500"
+                title={
+                  source.grounded === false
+                    ? 'Related match — below the relevance threshold, so it was not used in this answer'
+                    : undefined
+                }
+                className={
+                  source.grounded === false
+                    ? 'rounded-full border border-dashed border-border bg-transparent px-2 py-0.5 font-mono text-[10px] text-slate-600 italic'
+                    : 'rounded-full border border-border bg-white px-2 py-0.5 font-mono text-[10px] text-slate-600'
+                }
               >
                 {source.title}
+                {source.grounded === false && ' (not used)'}
               </span>
             ))}
           </div>
         )}
       </div>
-      <p className="mt-3 flex items-start gap-1.5 border-t border-blue-200 pt-3 text-xs text-slate-500 italic">
+      <p className="mt-3 flex items-start gap-1.5 border-t border-blue-200 pt-3 text-xs text-slate-600 italic">
         <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
         {consultation.response.disclaimer}
       </p>
