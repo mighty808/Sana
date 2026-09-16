@@ -1,0 +1,15 @@
+# Test-only dependencies. Kept separate from requirements.txt so a
+# production/deployment install doesn't pull the test stack in — and so CI can
+# install both with two lines while a plain `pip install -r requirements.txt`
+# still gives a runnable service.
+#
+# Install alongside the runtime deps:
+#   ./venv/Scripts/python -m pip install -r requirements-dev.txt
+
+pytest==8.3.4
+
+# FastAPI's TestClient is a thin wrapper over httpx — without it, importing
+# `from fastapi.testclient import TestClient` fails with a RuntimeError telling
+# you to install it. It is not needed at runtime, only to exercise the app
+# in-process (tests/test_api.py) instead of over a real socket.
+httpx==0.28.1
