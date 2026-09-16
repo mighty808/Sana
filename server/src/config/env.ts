@@ -34,4 +34,12 @@ export const env = {
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   // Base URL of the separate FastAPI microservice that runs Sana AI.
   aiServiceUrl: process.env.AI_SERVICE_URL ?? 'http://localhost:8000',
+  // Shared secret proving to the AI service that a /v1/consult request came
+  // from this backend. Optional on purpose, and it must match the
+  // AI_SERVICE_TOKEN in the Python service's own environment: when neither
+  // side sets it, local development works with no configuration; when both
+  // do, the endpoint is closed. A value set on only one side fails closed —
+  // the AI service returns 401 and Express reports it as unavailable — which
+  // is the safe direction for a mismatch.
+  aiServiceToken: process.env.AI_SERVICE_TOKEN,
 }
