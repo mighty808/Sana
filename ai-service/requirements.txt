@@ -1,15 +1,33 @@
-fastapi>=0.115
-uvicorn[standard]>=0.32
-pydantic>=2.9
-python-dotenv>=1.0
+# Pinned to exact versions rather than floors (`>=`).
+#
+# These were previously all `>=`, which meant two installs a month apart could
+# resolve to different libraries and behave differently — a real problem for a
+# project whose evaluation numbers (tests/test_retrieval.py) depend on the
+# embedding stack producing the same vectors it did when the thresholds were
+# measured. A floating `sentence-transformers` or `chromadb` could shift those
+# scores without a single line of this project changing.
+#
+# The versions below are the ones the working venv resolved to and that the
+# measured baselines were taken against. To upgrade deliberately: bump a pin,
+# reinstall, and re-run `pytest tests/test_retrieval.py` — if the retrieval
+# metrics moved, that is the upgrade's effect, and it is now visible.
+#
+# Transitive dependencies are not pinned here. A full lockfile (pip-compile)
+# would be stricter still; this is the level of reproducibility that is worth
+# maintaining by hand for a project this size.
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+pydantic==2.13.4
+python-dotenv==1.2.3
 
 # RAG pipeline
-langchain>=0.3
-langchain-groq>=0.2
-langchain-chroma>=0.2
-langchain-huggingface>=0.1
-chromadb>=0.5
+langchain==1.3.15
+langchain-groq==1.1.3
+langchain-chroma==1.1.0
+langchain-huggingface==1.2.2
+chromadb==1.5.9
 # Local embedding model (sentence-transformers) — no external API key
 # needed, unlike OpenAI embeddings. Downloads a small (~80MB) model to a
 # local cache on first run.
-sentence-transformers>=3.0
+sentence-transformers==5.7.0
