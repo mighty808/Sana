@@ -5,7 +5,8 @@ import { useAuth } from '@/features/auth/useAuth'
 import { NAV_GROUPS } from './navItems'
 import { ROLE_LABELS } from '@/lib/roles'
 import { NotificationBell } from '@/features/notifications/NotificationBell'
-import { useRealtimeNotifications } from '@/features/notifications/api'
+import { useRealtimeNotifications, useNotifications } from '@/features/notifications/api'
+import { useRealtimeWardBoard } from '@/features/encounters/api'
 import {
   SidebarProvider,
   Sidebar,
@@ -36,25 +37,44 @@ function initials(firstName: string, lastName: string) {
   return `${firstName[0] ?? ''}${lastName[0] ?? ''}`.toUpperCase()
 }
 
+// Every notify() type that's about a Referral (see referral.service.ts's
+// createReferral/updateReferralStatus and sendReferralMessage) — used to
+// compute the Referrals nav item's own unread badge, the same way the
+// Notifications item's badge is just "every unread notification."
+const REFERRAL_NOTIFICATION_TYPES = ['referral.created', 'referral.message.created', 'referral.status.updated']
 
-// The shared shell every authenticated screen renders inside: a white,
-// role-grouped sidebar (per the approved design spec — no dark sidebar),
-// a slim header bar with the current page title and the user's account
-// menu, and the routed page content. Every visual choice here (colors,
-// radii, the flat px-3 py-2 nav rows) follows Sana_Frontend_Design_Prompt.md
-// literally rather than improvising — that spec is the single source of
-// truth for this app's visual language now.
+
+// This is the shared frame every logged-in screen renders inside: a white
+// sidebar with nav items grouped by role, a slim header bar showing the
+// current page title and the user's account menu, and the actual page
+// content. All the visual choices here (colors, corner rounding, the flat
+// nav rows) are kept consistent across the app rather than varying screen
+// to screen.
 export function AppShell() {
   const { user, logout, hasPermission } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
 
-  // Mounted once, for the lifetime of the authenticated shell — listens for
-  // live notification.created events and keeps the bell's cache/badge in
-  // sync regardless of which page is currently showing. Must run
-  // unconditionally (before the `if (!user) return null` below) since React
-  // hooks can't follow a conditional early return.
+  // This is set up once and stays active for as long as the user is logged
+  // in. It listens for live notification events and keeps the bell icon's
+  // data and badge up to date no matter which page is currently showing.
+  // It has to run unconditionally, before the `if (!user) return null`
+  // below, because React hooks can't be skipped by an early return.
   useRealtimeNotifications()
+  // Same reasoning as useRealtimeNotifications above — runs unconditionally,
+  // for the whole logged-in session, so the Ward Board (and any open
+  // encounter detail page) stays live no matter which screen is showing.
+  useRealtimeWardBoard()
+  // This reads from the same cached data as the bell icon (using the exact
+  // same query key), so the same unread count can also be shown on the
+  // sidebar's "Notifications" nav item, not just on the header icon.
+  const { data: notifications } = useNotifications()
+  const unreadCount = notifications?.filter((n) => !n.readAt).length ?? 0
+  // Same idea, narrowed to the referral-related notification types, so the
+  // "Referrals" nav item can carry its own badge the same way "Notifications"
+  // does — see the ITEMS.referrals comment in navItems.ts.
+  const referralUnreadCount =
+    notifications?.filter((n) => !n.readAt && REFERRAL_NOTIFICATION_TYPES.includes(n.type)).length ?? 0
 
   if (!user) return null
 
@@ -63,23 +83,24 @@ export function AppShell() {
     navigate('/login', { replace: true })
   }
 
-  // Only this role's groups, and only the items this role's permissions
-  // actually allow — a visible nav link is never a dead end.
+  // Only show the nav groups for this role, and within those, only the
+  // items this role's permissions actually allow, so a visible nav link
+  // never leads somewhere the user isn't allowed to go.
   const groups = NAV_GROUPS[user.role.name]
     .map((group) => ({ ...group, items: group.items.filter((item) => hasPermission(item.permission)) }))
     .filter((group) => group.items.length > 0)
 
-  // The current page's title, derived from whichever nav item's route
-  // matches the current location — falls back to "Sana" so the header
-  // never renders blank for a route not represented in the sidebar (e.g. a
-  // detail page like /encounters/:id).
+  // The current page's title comes from whichever nav item's route matches
+  // the current URL. If no nav item matches — for example on a detail page
+  // like /encounters/:id, which isn't in the sidebar — it falls back to
+  // "Sana" so the header is never blank.
   const currentItem = groups.flatMap((g) => g.items).find((item) => location.pathname.startsWith(item.to))
   const pageTitle = currentItem?.label ?? 'Sana'
 
   return (
     <SidebarProvider>
-      {/* ---------- Sidebar: white background, right border only, grouped
-           nav with uppercase section labels — per spec, never dark. ---------- */}
+      {/* ---------- Sidebar: white background, border only on the right
+           side, nav items grouped under uppercase section labels. ---------- */}
       <Sidebar collapsible="icon" className="border-sidebar-border">
         <SidebarHeader className="px-3 py-4">
           <div className="flex items-center gap-2 px-1">
@@ -93,12 +114,19 @@ export function AppShell() {
         <SidebarContent>
           {groups.map((group) => (
             <SidebarGroup key={group.label}>
-              <SidebarGroupLabel className="text-[11px] font-medium tracking-wider text-muted-foreground uppercase">
+              <SidebarGroupLabel className="text-[11px] font-bold tracking-wider text-muted-foreground uppercase">
                 {group.label}
               </SidebarGroupLabel>
               <SidebarMenu>
                 {group.items.map((item) => {
                   const isActive = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
+                  // Notifications and Referrals are the only items that
+                  // show a count badge. The unread count is state specific
+                  // to this session, not something that belongs as a field
+                  // on the shared NavItem shape every other item also uses,
+                  // so it's looked up by matching the route instead.
+                  const badgeCount =
+                    item.to === '/notifications' ? unreadCount : item.to === '/referrals' ? referralUnreadCount : 0
                   return (
                     <SidebarMenuItem key={item.to}>
                       <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
@@ -107,6 +135,11 @@ export function AppShell() {
                             className={isActive ? 'text-sidebar-accent-foreground' : 'text-muted-foreground'}
                           />
                           <span>{item.label}</span>
+                          {badgeCount > 0 && (
+                            <span className="ml-auto flex size-4.5 items-center justify-center rounded-full bg-red-500 text-[10px] font-medium text-white group-data-[collapsible=icon]:hidden">
+                              {badgeCount > 9 ? '9+' : badgeCount}
+                            </span>
+                          )}
                         </NavLink>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -117,10 +150,10 @@ export function AppShell() {
           ))}
         </SidebarContent>
 
-        {/* User identity block at the foot of the sidebar — avatar,
-            name, role badge, and a direct logout action, exactly as the
-            spec's sidebar section describes (separate from the header's
-            own account dropdown, which covers Profile). */}
+        {/* User info block at the bottom of the sidebar — avatar, name,
+            role badge, and a direct logout button. This is separate from
+            the header's own account dropdown, which handles the Profile
+            link. */}
         <SidebarFooter className="gap-3 border-t border-sidebar-border px-3 py-3">
           <div className="flex items-center gap-2 group-data-[collapsible=icon]:justify-center">
             <Avatar className="size-8 shrink-0">
@@ -150,8 +183,8 @@ export function AppShell() {
       </Sidebar>
 
       <SidebarInset>
-        {/* ---------- Header: 64px, white, bottom border only — no shadow,
-             no background tint, per spec. ---------- */}
+        {/* ---------- Header: 64px tall, white background, border only on
+             the bottom, no shadow or background tint. ---------- */}
         <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
           <SidebarTrigger />
           <h1 className="text-lg font-semibold text-foreground">{pageTitle}</h1>
@@ -193,8 +226,8 @@ export function AppShell() {
           </div>
         </header>
 
-        {/* ---------- Content area: slate-50 background so white cards get
-             visible definition against it, max-w-7xl, no heavy shadows. ---------- */}
+        {/* ---------- Content area: light gray background so white cards
+             stand out clearly against it, a max width, no heavy shadows. ---------- */}
         <main className="flex-1 overflow-auto bg-background p-6">
           <div className="mx-auto max-w-7xl">
             <AnimatePresence mode="wait">
