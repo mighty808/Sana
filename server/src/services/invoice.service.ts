@@ -1,5 +1,6 @@
 import { Invoice, type InvoiceStatus } from '../models/Invoice.js'
-import { Encounter } from '../models/Encounter.js'
+import { LabOrder } from '../models/LabOrder.js'
+import { Prescription } from '../models/Prescription.js'
 import { generateId } from '../utils/generateId.js'
 import { AppError, assertValidObjectId, isDuplicateKeyError } from '../utils/apiResponse.js'
 import { roundMoney } from '../utils/money.js'
@@ -7,16 +8,19 @@ import { resolvePagination } from '../utils/pagination.js'
 import type { AuthedUser } from '../types/user.js'
 import { listPaymentsForInvoice } from './payment.service.js'
 import { getPatientForUser } from './patient.service.js'
+import { asPopulated } from '../utils/populate.js'
+import { isBrowsingBlocked } from '../utils/queryScope.js'
 
 // Statuses that still owe money — used both for filtering and for the
 // shared outstanding-balance aggregate below.
 const OPEN_INVOICE_STATUSES: InvoiceStatus[] = ['UNPAID', 'PARTIALLY_PAID']
 
-// Sums `balance` across every invoice matching `extraMatch` that's still
-// open (UNPAID or PARTIALLY_PAID) — the one "how much money is still owed"
-// calculation, parameterized by an extra filter so both the admin's
-// system-wide total and a single patient's own total go through the same
-// pipeline instead of two near-identical copies that could drift apart.
+// Adds up the `balance` field across every invoice matching `extraMatch`
+// that's still open (UNPAID or PARTIALLY_PAID). This is the one place
+// that calculates "how much money is still owed" — the admin's
+// system-wide total and a single patient's own total both call this with
+// a different filter, instead of each having its own near-identical copy
+// of the same calculation.
 export async function sumOutstandingBalance(extraMatch: Record<string, unknown> = {}): Promise<number> {
   const result = await Invoice.aggregate([
     { $match: { status: { $in: OPEN_INVOICE_STATUSES }, ...extraMatch } },
@@ -32,46 +36,71 @@ interface InvoiceItemInput {
 }
 
 interface CreateInvoiceInput {
-  encounter: string
+  labOrder?: string
+  prescription?: string
   items: InvoiceItemInput[]
 }
 
-// Generates an invoice from an encounter. `patient` is derived from the
-// encounter (not caller-supplied) — same reasoning as labOrder.service.ts's
-// createLabOrder: a bill always belongs to whichever patient the encounter is for.
+// Creates an invoice from exactly one billable thing — a lab order or a
+// prescription — one invoice per source, billing exactly its tests or
+// medications. `patient` and `encounter` are looked up from that source
+// document, not taken from whatever the caller sends, for the same reason
+// labOrder.service.ts's createLabOrder does the same thing: a bill always
+// belongs to whichever patient and encounter the thing it's billing
+// actually belongs to.
 //
-// Note: despite the blueprint phrasing this as "generate invoice from a
-// COMPLETED encounter," nothing here checks encounter.status, and — as of
-// this phase — no endpoint anywhere in the codebase can ever transition an
-// Encounter to COMPLETED in the first place (see models/Encounter.ts).
-// Blocking on that status would make invoice generation entirely
-// unreachable today, so rather than add an unenforceable/impossible-to-
-// satisfy guard, this is left open until a real encounter-completion flow
-// exists in a later phase, at which point this comment (and the route's
-// OpenAPI description) should be revisited alongside it.
-//
-// Each item's `amount` is computed here as qty * unitPrice, rounded to the
-// nearest pesewa — never trusted from the request body — so a caller can't
-// submit a line item whose amount doesn't actually match its own
-// qty/unitPrice and quietly skew the total.
+// Each item's `amount` is calculated here as qty times unitPrice, rounded
+// to the nearest pesewa — it's never taken directly from the request
+// body, so a caller can't submit a line item whose amount doesn't
+// actually match its own qty and unitPrice and quietly throw off the total.
 export async function createInvoice(input: CreateInvoiceInput) {
-  assertValidObjectId(input.encounter, 'encounter')
+  // schemas/invoice.ts's zod refine already guarantees exactly one of
+  // these is set before this ever runs, but the service layer doesn't
+  // trust the route layer alone for something this load-bearing (the same
+  // reasoning behind every other AppError check in this file that zod
+  // could theoretically have already ruled out).
+  if (Boolean(input.labOrder) === Boolean(input.prescription)) {
+    throw new AppError('Provide exactly one of labOrder or prescription', 400, 'INVALID_INVOICE_SOURCE')
+  }
 
-  const encounter = await Encounter.findById(input.encounter)
-  if (!encounter) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
+  // Everything that differs between the two billable sources — the
+  // friendly name used in error messages, the duplicate-invoice filter,
+  // and which of Invoice's two source fields gets set — is derived once
+  // here, at the one point that already has to branch on which source was
+  // given. Nothing below this branches on labOrder-vs-prescription again.
+  const source = input.labOrder
+    ? await (async () => {
+        assertValidObjectId(input.labOrder!, 'labOrder')
+        const labOrder = await LabOrder.findById(input.labOrder)
+        if (!labOrder) throw new AppError('Lab order not found', 404, 'LAB_ORDER_NOT_FOUND')
+        return {
+          doc: labOrder,
+          label: 'lab order',
+          duplicateFilter: { labOrder: labOrder.id, isActive: true },
+          fields: { labOrder: labOrder.id as string | undefined, prescription: undefined as string | undefined },
+        }
+      })()
+    : await (async () => {
+        assertValidObjectId(input.prescription!, 'prescription')
+        const prescription = await Prescription.findById(input.prescription)
+        if (!prescription) throw new AppError('Prescription not found', 404, 'PRESCRIPTION_NOT_FOUND')
+        return {
+          doc: prescription,
+          label: 'prescription',
+          duplicateFilter: { prescription: prescription.id, isActive: true },
+          fields: { labOrder: undefined as string | undefined, prescription: prescription.id as string | undefined },
+        }
+      })()
 
-  // Pre-check for a friendly, specific error message in the common
-  // (non-racing) case — but this alone is NOT what prevents double-billing
-  // under concurrent requests; the partial unique index on
-  // models/Invoice.ts (encounter + isActive) is what actually enforces
-  // that at the database level. See the try/catch below.
-  const existing = await Invoice.findOne({ encounter: input.encounter, isActive: true })
+  // This check gives a friendlier, more specific error message in the
+  // normal case. On its own, though, it can't stop two requests arriving
+  // at the exact same time from both slipping past it — what actually
+  // prevents double-billing is the matching partial unique index on
+  // models/Invoice.ts, enforced by the database itself. The try/catch
+  // below handles the case where that race actually happens.
+  const existing = await Invoice.findOne(source.duplicateFilter)
   if (existing) {
-    throw new AppError(
-      `Encounter already has an invoice (${existing.invoiceNumber})`,
-      409,
-      'INVOICE_ALREADY_EXISTS',
-    )
+    throw new AppError(`This ${source.label} already has an invoice (${existing.invoiceNumber})`, 409, 'INVOICE_ALREADY_EXISTS')
   }
 
   const items = input.items.map((item) => ({
@@ -85,38 +114,51 @@ export async function createInvoice(input: CreateInvoiceInput) {
   try {
     return await Invoice.create({
       invoiceNumber,
-      patient: encounter.patient,
-      encounter: input.encounter,
+      patient: source.doc.patient,
+      // Copied from the source document's own `encounter` once, here, at
+      // creation — see models/Invoice.ts's comment on why `encounter`
+      // exists at all. Nothing in this codebase ever reassigns a LabOrder's
+      // or Prescription's `encounter` after creation (both are true
+      // immutable parent references, not just by convention), so this
+      // can't drift today. If a future change ever adds a way to move
+      // either onto a different Encounter, that change must also update
+      // every Invoice.encounter pointing at the old one, or this copy will
+      // silently go stale.
+      encounter: source.doc.encounter,
+      labOrder: source.fields.labOrder,
+      prescription: source.fields.prescription,
       items,
       subtotal,
-      // No tax/discount logic in this MVP (see the field's comment on
-      // models/Invoice.ts) — total starts out equal to subtotal.
+      // There's no tax or discount handling yet, so the total is simply
+      // equal to the subtotal.
       total: subtotal,
       amountPaid: 0,
       balance: subtotal,
     })
   } catch (err) {
-    // Closes the race the pre-check above can't: if two requests for the
-    // same encounter both passed the findOne check before either wrote,
-    // the SECOND create() here collides with the partial unique index and
-    // fails with a duplicate-key error, which we turn into the same clean
-    // 409 the pre-check gives in the non-racing case.
+    // This is what closes the race the check above can't: if two requests
+    // for the same lab order/prescription both pass the findOne check
+    // before either one has written anything, the second create() call
+    // collides with the database's unique index and fails with a
+    // duplicate-key error. That gets turned into the same clean 409
+    // response the earlier check already gives in the normal, non-racing case.
     if (isDuplicateKeyError(err)) {
-      throw new AppError('Encounter already has an invoice', 409, 'INVOICE_ALREADY_EXISTS')
+      throw new AppError(`This ${source.label} already has an invoice`, 409, 'INVOICE_ALREADY_EXISTS')
     }
     throw err
   }
 }
 
-// Lists invoices. Only ADMIN and PATIENT hold 'invoice.read' at all (see
-// types/permissions.ts — Doctor/Nurse have no billing visibility in this
-// MVP, matching the blueprint's role table). ADMIN sees everything
-// (paginated — an unbounded `.find()` here would eventually return the
-// entire invoices collection, unlike patient.service.ts's searchPatients or
-// notification.service.ts's listNotifications, which are both capped);
-// PATIENT is hard-restricted to their own invoices — like lab-result
-// release-gating in Phase 5, this is a direct enforcement of "Patient: view
-// own ... invoices," not a "nice to have" scoping choice.
+// Lists invoices. Admin, Patient, Lab Tech, and Pharmacist all hold
+// 'invoice.read' (see types/permissions.ts) — Doctor and Nurse have no
+// billing visibility at all. Admin sees every invoice, paginated so this
+// doesn't eventually return the entire collection in one response. Patient
+// only ever sees their own invoices — a hard rule, not just a default. Lab
+// Tech's and Pharmacist's `invoice.read` permission only exists to look up
+// one specific order's/prescription's invoice (see getInvoiceForLabOrder/
+// getInvoiceForPrescription below) — neither role browses the full ledger,
+// so this list function returns nothing for either rather than handing
+// back every invoice in the system.
 export async function listInvoices(user: AuthedUser, opts: { page?: number; limit?: number } = {}) {
   if (user.role.name === 'PATIENT') {
     const patient = await getPatientForUser(user.id)
@@ -124,34 +166,74 @@ export async function listInvoices(user: AuthedUser, opts: { page?: number; limi
     return Invoice.find({ patient: patient.id }).sort({ createdAt: -1 })
   }
 
+  if (isBrowsingBlocked(user, ['LAB_TECH', 'PHARMACIST'])) return []
+
   // ADMIN.
   const { skip, limit } = resolvePagination(opts)
   return Invoice.find().populate('patient').sort({ createdAt: -1 }).skip(skip).limit(limit)
 }
 
-// Fetches one invoice with its payment history. For PATIENT, this is
-// hard-scoped to their own invoice (not the "broad by permission" precedent
-// from Phase 4/5's single-resource GETs) — for the same reason listInvoices
-// above hard-restricts them: invoice access for a patient is a blueprint
-// requirement, not a staff-convenience default.
+// Fetches the invoice for a given lab order — there's at most one
+// non-voided invoice per order, enforced by a unique index on
+// models/Invoice.ts — or null if that order has no invoice yet. Admin and
+// Lab Tech can look up any lab order's invoice this way, the same as
+// getLabOrderById() in labOrder.service.ts lets them look up any order
+// directly by id: it's a direct lookup for an id the caller already has,
+// not a browsable list. A patient is different, though — a patient could
+// pass in any lab order id at all, so without a check here, they could
+// read a stranger's invoice. This enforces the same "only your own
+// invoices" rule that getInvoiceById() and listInvoices() already apply
+// for a patient.
+export async function getInvoiceForLabOrder(labOrderId: string, user: AuthedUser) {
+  assertValidObjectId(labOrderId, 'labOrder')
+  const invoice = await Invoice.findOne({ labOrder: labOrderId, isActive: true })
+  if (!invoice) return null
+
+  if (user.role.name === 'PATIENT') {
+    const patient = await getPatientForUser(user.id)
+    if (!patient || invoice.patient.toString() !== patient.id) return null
+  }
+
+  return invoice
+}
+
+// Same as getInvoiceForLabOrder above, mirrored for prescriptions — lets
+// Admin/Pharmacist look up one prescription's invoice directly (e.g. to
+// disable "Bill this prescription" once it's already billed).
+export async function getInvoiceForPrescription(prescriptionId: string, user: AuthedUser) {
+  assertValidObjectId(prescriptionId, 'prescription')
+  const invoice = await Invoice.findOne({ prescription: prescriptionId, isActive: true })
+  if (!invoice) return null
+
+  if (user.role.name === 'PATIENT') {
+    const patient = await getPatientForUser(user.id)
+    if (!patient || invoice.patient.toString() !== patient.id) return null
+  }
+
+  return invoice
+}
+
+// Fetches one invoice along with its payment history. For a patient, this
+// is locked to their own invoice only, for the same reason listInvoices
+// above locks them to their own invoices too — a patient should never be
+// able to see someone else's billing.
 export async function getInvoiceById(id: string, user: AuthedUser) {
   const invoice = await Invoice.findById(id).populate('patient')
   if (!invoice) throw new AppError('Invoice not found', 404, 'INVOICE_NOT_FOUND')
 
   if (user.role.name === 'PATIENT') {
     const patient = await getPatientForUser(user.id)
-    // `.populate('patient')` above replaces the raw ObjectId with a full
-    // Patient document at runtime, but Mongoose's static types don't
-    // reflect that (same reasoning as the identical cast pattern in
-    // auth.service.ts) — hence the cast to read `.id` off it here. Guarded
-    // with `?.` because populate CAN legitimately return null (an orphaned
-    // reference to a patient record that no longer exists) — without the
-    // guard, that edge case would throw an uncaught TypeError instead of
-    // the intended 404.
-    const invoicePatientId = (invoice.patient as unknown as { id: string } | null)?.id
+    // `.populate('patient')` above swapped the raw patient id for the full
+    // Patient document — asPopulated names that gap for TypeScript so `.id`
+    // can be read off it. The `?.` guard matters because populate can
+    // genuinely come back null — if the patient this invoice points at was
+    // deleted, this avoids throwing an unhandled error and lets the check
+    // below turn it into a normal 404 instead.
+    const invoicePatientId = asPopulated<{ id: string } | null>(invoice.patient)?.id
     if (!patient || invoicePatientId !== patient.id) {
-      // Same invoice, wrong patient — report 404 rather than 403 so a
-      // patient can't use this endpoint to probe which invoice ids exist.
+      // Same invoice, wrong patient. This reports a 404 instead of a 403
+      // so a patient can't use this endpoint to figure out which invoice
+      // ids exist for other people.
       throw new AppError('Invoice not found', 404, 'INVOICE_NOT_FOUND')
     }
   }
