@@ -3,23 +3,23 @@ import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mong
 export const LAB_RESULT_INTERPRETATIONS = ['NORMAL', 'ABNORMAL', 'CRITICAL'] as const
 export type LabResultInterpretation = (typeof LAB_RESULT_INTERPRETATIONS)[number]
 
-// A result entered for one test within a LabOrder. `status` gates patient
-// visibility: a result starts ENTERED (staff-only) and only becomes visible
-// to the patient once explicitly RELEASED — matching the blueprint's
-// "Admin enters results -> releases" workflow and the role table's "Patient:
-// view own ... APPROVED lab results" (approved == released).
+// A result entered for one test within a LabOrder. The `status` field
+// controls whether a patient can see it: a result starts out ENTERED,
+// visible only to staff, and only becomes visible to the patient once a
+// lab tech explicitly RELEASEs it — a deliberate two-step process, so a
+// result is never shown to a patient the moment it's typed in.
 export const LAB_RESULT_STATUSES = ['ENTERED', 'RELEASED'] as const
 export type LabResultStatus = (typeof LAB_RESULT_STATUSES)[number]
 
 const labResultSchema = new Schema(
   {
     labOrder: { type: Schema.Types.ObjectId, ref: 'LabOrder', required: true },
-    // Denormalized from the order (see the identical pattern + reasoning on
-    // VitalSign.patient in models/VitalSign.ts) so results can be queried
-    // per-patient without populating through labOrder every time.
+    // This is also stored directly on the order, copied here too so
+    // results can be looked up per patient without a separate lookup
+    // through labOrder each time — the same pattern as
+    // VitalSign.patient in models/VitalSign.ts.
     patient: { type: Schema.Types.ObjectId, ref: 'Patient', required: true },
-    // Whoever entered the result — Admin in this MVP (no separate Lab
-    // Technician role — see blueprint section 1.3).
+    // Whoever entered the result — the Lab Technician role.
     performedBy: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     testName: { type: String, required: true, trim: true },
     resultValue: { type: String, required: true, trim: true },
