@@ -12,7 +12,7 @@ export function PasswordInput({ className, ...props }: ComponentProps<typeof Inp
 
   return (
     <div className="relative">
-      <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+      <Lock className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-600" />
       <Input
         type={visible ? 'text' : 'password'}
         className={cn('h-10 pr-9 pl-9', className)}
@@ -21,7 +21,7 @@ export function PasswordInput({ className, ...props }: ComponentProps<typeof Inp
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
-        className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+        className="absolute top-1/2 right-3 -translate-y-1/2 text-slate-600 hover:text-slate-600"
         aria-label={visible ? 'Hide password' : 'Show password'}
       >
         {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
