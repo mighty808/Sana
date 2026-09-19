@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 
-// Mirrors server/src/schemas/auth.ts's forgotPasswordSchema.
+// Matches server/src/schemas/auth.ts's forgotPasswordSchema.
 const forgotPasswordSchema = z.object({
   email: z.string().trim().toLowerCase().email('Enter a valid email address'),
 })
@@ -30,11 +30,12 @@ export function ForgotPasswordPage() {
   async function onSubmit(values: ForgotPasswordForm) {
     setServerError(null)
     try {
-      // The backend always returns the same generic success message here,
-      // whether or not the email is actually registered (see
-      // server/src/services/auth.service.ts's requestPasswordReset) — so
-      // this form always shows the same "check your email" confirmation
-      // too, deliberately not revealing which emails exist in the system.
+      // The server always returns the same generic success message here,
+      // whether or not the email address is actually registered (see
+      // server/src/services/auth.service.ts's requestPasswordReset). This
+      // form does the same thing, always showing the same "check your
+      // email" confirmation, on purpose, so that this page can't be used to
+      // find out which email addresses exist in the system.
       await api.post('/auth/forgot-password', values)
       setSubmitted(true)
     } catch (err) {
@@ -77,9 +78,12 @@ export function ForgotPasswordPage() {
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+                        {/* Same fix as LoginPage.tsx's email field — FormControl
+                            needs the <Input> as its direct child, not a wrapping
+                            <div>, or the label never associates with it. */}
+                        <div className="relative">
+                          <Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-600" />
+                          <FormControl>
                             <Input
                               type="email"
                               autoComplete="email"
@@ -87,8 +91,8 @@ export function ForgotPasswordPage() {
                               className="h-10 pl-9"
                               {...field}
                             />
-                          </div>
-                        </FormControl>
+                          </FormControl>
+                        </div>
                         <FormMessage />
                       </FormItem>
                     )}
