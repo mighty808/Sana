@@ -9,9 +9,10 @@ import * as ctrl from '../controllers/patient.controller.js'
 const router = Router()
 
 // Mounted at /api/v1/patients in routes/index.ts.
-// Every route here requires 'patient.*' permissions, which only Admin and
-// Doctor hold by default (see types/permissions.ts) — Nurse gets read-only
-// via 'patient.read' too (to view assigned patients), Patient gets none.
+// Every route here requires a 'patient.*' permission. By default, only
+// Admin and Doctor have these permissions (see types/permissions.ts). Nurse
+// also gets read-only access through 'patient.read', so they can view
+// assigned patients, and the Patient role gets none of these permissions.
 
 /**
  * @openapi
@@ -106,8 +107,8 @@ router.patch(
  *     summary: Get a patient's chronological event history
  *     tags: [Patients]
  *     description: >
- *       Appointments/encounters/labOrders/invoices arrays are placeholders
- *       until Phases 4, 5, and 7 add those collections.
+ *       Returns the patient's real history: every appointment, encounter,
+ *       lab order, and invoice tied to them, in chronological order.
  *     parameters:
  *       - in: path
  *         name: id
