@@ -2,8 +2,9 @@ import { z } from 'zod'
 import { BLOOD_GROUPS } from '../types/patient.js'
 
 // Validates POST /patients request bodies (registering a new patient).
-// `z.coerce.date()` accepts the ISO date string the frontend sends (e.g.
-// "1990-05-12") and turns it into a real JS Date before it reaches Mongoose.
+// `z.coerce.date()` takes the date string the frontend sends (e.g.
+// "1990-05-12") and converts it into a real JS Date object before it reaches
+// Mongoose.
 export const createPatientSchema = z.object({
   firstName: z.string().trim().min(1),
   lastName: z.string().trim().min(1),
@@ -21,6 +22,6 @@ export const createPatientSchema = z.object({
     .optional(),
 })
 
-// Validates PATCH /patients/:id request bodies — everything optional so a
-// caller can send just the fields they're changing (e.g. only `phone`).
+// Validates PATCH /patients/:id request bodies. Every field is optional here
+// so a caller can send just the fields they're changing (e.g. only `phone`).
 export const updatePatientSchema = createPatientSchema.partial()
