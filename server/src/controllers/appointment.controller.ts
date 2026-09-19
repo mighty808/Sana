@@ -4,8 +4,12 @@ import * as auditService from '../services/audit.service.js'
 import { ok } from '../utils/apiResponse.js'
 import type { AppointmentStatus } from '../models/Appointment.js'
 
-// POST /appointments — requires 'appointment.create' (Admin, per the
-// default role permissions — see types/permissions.ts).
+// POST /appointments — requires 'appointment.create' (Nurse only, per the
+// default role permissions — see types/permissions.ts). The nurse picks
+// which doctor the appointment is with, using `doctor` in the request body,
+// since a nurse isn't a doctor herself. That doctor value is actually
+// checked and validated in appointment.service.ts's createAppointment, not
+// just trusted as-is.
 export async function create(req: Request, res: Response) {
   const appointment = await appointmentService.createAppointment(req.body)
   await auditService.logAction(req, req.user!.id, 'APPOINTMENT_BOOKED', 'Appointment', appointment.id, {
@@ -15,16 +19,16 @@ export async function create(req: Request, res: Response) {
 }
 
 // GET /appointments — requires 'appointment.read'. Every role holds this
-// permission by default; listAppointments() itself narrows the results
-// based on the caller's role (see the detailed comment there).
+// permission by default. listAppointments() itself narrows the results
+// down based on the caller's role (see the detailed comment there).
 export async function list(req: Request, res: Response) {
   const appointments = await appointmentService.listAppointments(req.user!)
   return ok(res, appointments)
 }
 
 // PATCH /appointments/:id/status — requires 'appointment.update'.
-// req.user! is passed through so the service can restrict a DOCTOR caller
-// to only updating their own assigned appointments (see the ownership note
+// req.user! is passed through so the service can make sure a DOCTOR caller
+// can only update appointments assigned to them (see the ownership note
 // on updateAppointmentStatus in appointment.service.ts).
 export async function updateStatus(req: Request, res: Response) {
   const appointment = await appointmentService.updateAppointmentStatus(
