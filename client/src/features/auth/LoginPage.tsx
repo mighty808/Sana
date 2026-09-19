@@ -14,10 +14,11 @@ import { PasswordInput } from '@/components/PasswordInput'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 
-// Mirrors server/src/schemas/auth.ts's loginSchema exactly (trimmed,
-// lowercased email; password just needs to be present) — client-side
-// validation exists purely to give instant feedback before a round trip,
-// the backend re-validates the same rules regardless.
+// Matches server/src/schemas/auth.ts's loginSchema exactly: the email gets
+// trimmed and lowercased, and the password just needs to be present. This
+// validation on the client only exists to give the user instant feedback
+// before a request is even sent. The server checks the same rules again
+// regardless of what happens here.
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email('Enter a valid email address'),
   password: z.string().min(1, 'Enter your password'),
@@ -39,9 +40,10 @@ export function LoginPage() {
     setServerError(null)
     try {
       await login(values.email, values.password)
-      // Send the user back to whatever page they originally tried to
-      // reach before ProtectedRoute redirected them here (see
-      // components/ProtectedRoute.tsx), or the dashboard by default.
+      // Send the user back to whatever page they were originally trying to
+      // reach before ProtectedRoute redirected them to the login page (see
+      // components/ProtectedRoute.tsx). If there wasn't one, send them to
+      // the dashboard instead.
       const from = (location.state as { from?: Location })?.from?.pathname ?? '/dashboard'
       navigate(from, { replace: true })
     } catch (err) {
@@ -74,9 +76,17 @@ export function LoginPage() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Email</FormLabel>
-                      <FormControl>
-                        <div className="relative">
-                          <Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+                      {/* FormControl clones its id/aria-* props onto its single
+                          direct child via Radix Slot — that child has to be the
+                          <Input> itself, not a wrapping <div>, or the label never
+                          actually associates with the input (found via a
+                          Playwright getByLabel() failure: the input's accessible
+                          name was falling back to its placeholder instead).
+                          PasswordInput below sidesteps this by forwarding props
+                          through to its own inner <Input>. */}
+                      <div className="relative">
+                        <Mail className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-600" />
+                        <FormControl>
                           <Input
                             type="email"
                             autoComplete="email"
@@ -84,8 +94,8 @@ export function LoginPage() {
                             className="h-10 pl-9"
                             {...field}
                           />
-                        </div>
-                      </FormControl>
+                        </FormControl>
+                      </div>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -121,7 +131,7 @@ export function LoginPage() {
 
             <div className="mt-6 flex items-start gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2.5">
               <ShieldCheck className="mt-0.5 size-4 shrink-0 text-blue-600" />
-              <p className="text-xs leading-relaxed text-slate-500">
+              <p className="text-xs leading-relaxed text-slate-600">
                 Access is provisioned by your hospital's admin team. If you don't have an account
                 yet, ask an administrator to create one for you.
               </p>
@@ -129,7 +139,7 @@ export function LoginPage() {
           </CardContent>
         </Card>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
+        <p className="mt-6 text-center text-xs text-slate-600">
           <Link to="/" className="hover:text-blue-600">← Back to Sana</Link>
         </p>
       </motion.div>
