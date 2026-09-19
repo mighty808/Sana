@@ -24,4 +24,20 @@ const router = Router()
  */
 router.get('/dashboard', auth, requirePermission('analytics.read'), ctrl.dashboard)
 
+/**
+ * @openapi
+ * /analytics/trends:
+ *   get:
+ *     summary: Hospital-wide trend charts (Admin only)
+ *     tags: [Analytics]
+ *     description: >
+ *       30-day appointment volume, 30-day revenue, 30-day appointment outcome
+ *       breakdown, and 8-week lab turnaround time — real time-series data
+ *       meant to be charted, unlike the single-number /dashboard summary above.
+ *     responses:
+ *       200:
+ *         description: Trend data for the Analytics page.
+ */
+router.get('/trends', auth, requirePermission('analytics.readTrends'), ctrl.trends)
+
 export default router
