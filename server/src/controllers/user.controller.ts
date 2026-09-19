@@ -26,3 +26,12 @@ export async function list(_req: Request, res: Response) {
   const users = await userService.listUsers()
   return ok(res, users.map((u) => toPublicUser(u)))
 }
+
+// GET /users/doctors
+// Requires 'appointment.create' (Nurse only) — a narrower lookup than
+// GET /users, which stays Admin-only. Powers the doctor picker on the
+// appointment-booking form.
+export async function listDoctors(_req: Request, res: Response) {
+  const doctors = await userService.listDoctors()
+  return ok(res, doctors.map((u) => toPublicUser(u)))
+}
