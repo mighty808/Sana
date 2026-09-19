@@ -18,36 +18,50 @@ const invoiceItemSchema = new Schema(
   { _id: false },
 )
 
-// A bill generated from a completed encounter. `amountPaid`/`balance`/
-// `status` are running totals kept in sync by payment.service.ts's
-// recordPayment() as payments come in — see that function's comment for why
-// it uses a single atomic pipeline update rather than a load/mutate/save
-// cycle (this is money; a lost or double-counted update is a real problem,
-// not just a display glitch).
+// A bill generated from exactly one billable thing — a lab order or a
+// prescription — one invoice per order/prescription, with one line item
+// per test/medication on it (see invoice.service.ts's createInvoice,
+// which enforces that "exactly one" rule). `encounter` is kept here too,
+// alongside `labOrder`/`prescription`, purely as a convenience — the
+// patient timeline and other views can read it directly instead of
+// looking it up through the source document every time. `amountPaid`,
+// `balance`, and `status` get kept up to date by payment.service.ts's
+// recordPayment() as payments come in — see that function's comment for
+// why it updates these in one single database operation, rather than
+// loading the invoice, changing it, and saving it back. Since this is
+// money, a lost or double-counted update would be a real problem, not
+// just a display glitch.
 const invoiceSchema = new Schema(
   {
     // Human-readable, sequential id like "INV-2026-00001" (see utils/generateId.ts).
     invoiceNumber: { type: String, required: true, unique: true },
     patient: { type: Schema.Types.ObjectId, ref: 'Patient', required: true },
     encounter: { type: Schema.Types.ObjectId, ref: 'Encounter', required: true },
+    // Exactly one of these two is ever set — enforced in
+    // invoice.service.ts's createInvoice (and schemas/invoice.ts's zod
+    // schema on the way in), not at the Mongoose schema level, the same
+    // way this codebase generally keeps cross-field validation in the
+    // service layer rather than in the schema itself.
+    labOrder: { type: Schema.Types.ObjectId, ref: 'LabOrder' },
+    prescription: { type: Schema.Types.ObjectId, ref: 'Prescription' },
     items: { type: [invoiceItemSchema], required: true },
     subtotal: { type: Number, required: true, min: 0 },
-    // Kept as its own field (rather than always just reading `subtotal`)
-    // because the blueprint's schema lists both — this MVP has no
-    // tax/discount logic yet, so `total` always equals `subtotal` today,
-    // but the field exists so that logic has somewhere to plug in later
-    // without a schema migration.
+    // This is its own field, separate from `subtotal`, so that tax or
+    // discount logic has somewhere to plug in later without needing to
+    // change the schema. For now, since there's no tax or discount logic
+    // yet, `total` always ends up equal to `subtotal`.
     total: { type: Number, required: true, min: 0 },
     amountPaid: { type: Number, required: true, default: 0, min: 0 },
     balance: { type: Number, required: true },
     status: { type: String, enum: INVOICE_STATUSES, default: 'UNPAID' },
-    // True for every status except VOIDED. Exists purely so the partial
-    // unique index below can express "unique among non-voided invoices" —
-    // MongoDB's partialFilterExpression only supports simple equality-style
-    // conditions ($eq, $exists, $gt/$gte/$lt/$lte), not $ne or $in, so
-    // there's no way to write the filter directly against `status`. Any
-    // future code that sets `status: 'VOIDED'` MUST also set `isActive:
-    // false` in the same update, or this index stops enforcing the invariant.
+    // True for every status except VOIDED. This exists only so the
+    // partial unique index below can say "unique among the invoices that
+    // are still active." MongoDB's partial indexes can only filter on
+    // simple conditions like equals, exists, or greater/less-than — they
+    // can't filter on "not equal to," so there's no way to write that
+    // filter directly against `status`. This means any code that sets
+    // `status: 'VOIDED'` must also set `isActive: false` in that same
+    // update — otherwise the index below stops actually enforcing the rule.
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true },
@@ -57,15 +71,34 @@ const invoiceSchema = new Schema(
 // invoices" view (status != PAID).
 invoiceSchema.index({ patient: 1, createdAt: -1 })
 invoiceSchema.index({ status: 1 })
-// Enforces "at most one non-VOIDED invoice per encounter" AT THE DATABASE
-// LEVEL, not just via invoice.service.ts's findOne-then-create check (which
-// on its own has a race: two near-simultaneous requests can both pass that
-// check before either has written, both succeeding). A PARTIAL unique
-// index — unique on `encounter`, but only among documents where
-// `isActive: true` — is what makes this a conditional rule instead of a
-// blanket one: a VOIDED invoice (isActive: false) falls outside the
-// index's filter, so its encounter CAN still get a replacement invoice.
-invoiceSchema.index({ encounter: 1 }, { unique: true, partialFilterExpression: { isActive: true } })
+// This enforces "at most one non-voided invoice per lab order" at the
+// database level, not just through invoice.service.ts's own check before
+// creating one (which on its own has a gap: two requests arriving at
+// almost the same moment could both pass that check before either has
+// written anything, and both succeed). This partial unique index — unique
+// on `labOrder`, but only counting documents where `isActive` is true —
+// is what makes the rule conditional instead of absolute: a voided
+// invoice falls outside the index's filter, so its lab order can still
+// get a replacement invoice afterward. It's scoped to `labOrder` rather
+// than `encounter` so that an encounter with several lab orders can bill
+// each one separately, instead of forcing every test across a whole
+// visit onto one invoice.
+//
+// `labOrder: { $exists: true }` in the filter matters now that `labOrder`
+// is optional (a prescription-billing invoice never sets it): without that
+// clause, every prescription invoice would also match this partial index
+// with `labOrder` absent, and MongoDB would only ever allow ONE such
+// document — every prescription invoice after the first would collide on
+// a uniqueness rule that was never meant to apply to it at all.
+invoiceSchema.index(
+  { labOrder: 1 },
+  { unique: true, partialFilterExpression: { isActive: true, labOrder: { $exists: true } } },
+)
+// Same rule, mirrored for prescriptions — at most one active invoice per prescription.
+invoiceSchema.index(
+  { prescription: 1 },
+  { unique: true, partialFilterExpression: { isActive: true, prescription: { $exists: true } } },
+)
 
 export type InvoiceAttrs = InferSchemaType<typeof invoiceSchema>
 export type InvoiceDoc = HydratedDocument<InvoiceAttrs>
