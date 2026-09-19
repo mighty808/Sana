@@ -10,11 +10,14 @@ export function calculateAge(dob: string): number {
   // converts that instant to the browser's local timezone first, which can
   // shift it to the previous day west of UTC — making the age look a year
   // too high for part of that day. Reading it with the UTC getters instead
-  // keeps the birth date exactly as it was recorded.
-  let age = now.getFullYear() - birth.getUTCFullYear()
+  // keeps the birth date exactly as it was recorded. `now` is read with the
+  // UTC getters too, so both sides of the birthday comparison below are in
+  // the same calendar frame — mixing local getters for one side and UTC for
+  // the other would compare two different "today"s near a birthday boundary.
+  let age = now.getUTCFullYear() - birth.getUTCFullYear()
   const hasHadBirthdayThisYear =
-    now.getMonth() > birth.getUTCMonth() ||
-    (now.getMonth() === birth.getUTCMonth() && now.getDate() >= birth.getUTCDate())
+    now.getUTCMonth() > birth.getUTCMonth() ||
+    (now.getUTCMonth() === birth.getUTCMonth() && now.getUTCDate() >= birth.getUTCDate())
   if (!hasHadBirthdayThisYear) age -= 1
   return age
 }
