@@ -1,14 +1,14 @@
-// Static reference data + small random-generation helpers used only by
-// utils/bulkSeed.ts to produce realistic-looking demo data (see blueprint
-// section 13.2's seed data requirements). Kept in its own file so
-// bulkSeed.ts itself reads as "what gets created," not "here are 200 lines
-// of name arrays" — this file is pure data + helpers, no DB writes.
+// Reference data and small random-generation helpers, used only by
+// utils/bulkSeed.ts to produce realistic-looking demo data. This lives in
+// its own file so bulkSeed.ts itself reads as "what gets created," not
+// "here are 200 lines of name arrays." Nothing in this file writes to the
+// database — it's just data and small helper functions.
 
 // A representative spread of common Ghanaian first names (traditional day
-// names plus widely-used English first names) and surnames — enough
-// variety that generated patients/staff don't look obviously repetitive in
-// a demo, without needing an external fake-data library for what's really
-// just "pick realistic names for ~150 records."
+// names plus widely-used English first names) and surnames. This gives
+// enough variety that generated patients and staff don't look obviously
+// repetitive in a demo, without needing an external fake-data library for
+// what's really just picking realistic names for about 150 records.
 export const MALE_FIRST_NAMES = [
   'Kwame', 'Kofi', 'Kwesi', 'Kwabena', 'Yaw', 'Kwaku', 'Kojo', 'Ekow', 'Fiifi',
   'Kingsley', 'Emmanuel', 'Samuel', 'Daniel', 'Michael', 'Isaac', 'Prince',
@@ -27,24 +27,10 @@ export const LAST_NAMES = [
   'Quaye', 'Tetteh', 'Danso', 'Yeboah', 'Antwi', 'Acheampong',
 ]
 
-// Standard clinical departments for a general hospital — matches the kind
-// of departments referenced throughout earlier phases' live testing
-// (Cardiology, General Medicine, etc.), expanded to a fuller realistic set.
-export const DEPARTMENTS = [
-  { name: 'General Medicine', description: 'Primary adult care and internal medicine.' },
-  { name: 'Paediatrics', description: 'Care for infants, children, and adolescents.' },
-  { name: 'Obstetrics & Gynaecology', description: 'Maternal, pregnancy, and women\'s health.' },
-  { name: 'Surgery', description: 'General and specialist surgical care.' },
-  { name: 'Cardiology', description: 'Heart and cardiovascular conditions.' },
-  { name: 'Emergency', description: 'Urgent and acute care.' },
-  { name: 'Orthopaedics', description: 'Musculoskeletal injuries and conditions.' },
-  { name: 'ENT', description: 'Ear, nose, and throat conditions.' },
-]
-
-// Chief complaints an encounter might open with — deliberately overlapping
-// with the conditions covered in ai-service/rag/knowledge_base.py (Phase 8),
-// so a demo doctor consulting MediAssist AI during one of these seeded
-// encounters gets a realistically relevant response.
+// Chief complaints an encounter might open with. These are chosen to
+// overlap with the conditions covered in
+// ai-service/rag/knowledge_base.py, so that if a demo doctor asks Sana AI
+// about one of these seeded encounters, they get a realistically relevant answer.
 export const CHIEF_COMPLAINTS = [
   'Persistent cough, weight loss, and night sweats for 3 weeks',
   'Fever with chills and headache for 2 days',
