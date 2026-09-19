@@ -9,10 +9,11 @@ export function useDashboard() {
       const res = await api.get<ApiSuccess<DashboardSummary>>('/analytics/dashboard')
       return res.data.data
     },
-    // The dashboard is a live "what's happening right now" summary
-    // (today's appointments, pending lab work) — refetching on every
-    // window focus keeps it from going stale if left open in a background
-    // tab, unlike the app's other queries which lean on the 30s default.
+    // The dashboard shows a live "what's happening right now" summary,
+    // things like today's appointments and pending lab work. Refetching it
+    // every time the browser window regains focus keeps it from going
+    // stale if it's left open in a background tab. Most of the app's other
+    // queries don't do this and just rely on the default 30-second refresh.
     refetchOnWindowFocus: true,
   })
 }
