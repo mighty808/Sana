@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
+import { StatusBadge } from '@/components/StatusBadge'
 import {
   Dialog,
   DialogContent,
@@ -26,9 +27,9 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 
-// Mirrors server/src/schemas/patient.ts's createPatientSchema — same field
-// names/requirements, so client-side validation never disagrees with what
-// the backend will actually accept.
+// Matches server/src/schemas/patient.ts's createPatientSchema, with the same
+// field names and requirements, so the validation shown to the user here never
+// disagrees with what the backend will actually accept.
 const patientFormSchema = z.object({
   firstName: z.string().trim().min(1, 'Required'),
   lastName: z.string().trim().min(1, 'Required'),
@@ -257,10 +258,10 @@ function AddPatientDialog() {
 export function PatientsPage() {
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
-  // `search` updates on every keystroke (so the input never feels laggy);
-  // `debouncedSearch` is what actually drives the query, so typing
-  // "Akosua" fires one request instead of one per character against
-  // MongoDB's $text index.
+  // `search` updates on every keystroke, so the input box always feels responsive.
+  // `debouncedSearch` is the value that actually triggers the search request, so
+  // typing a name like "Akosua" sends one request once typing pauses, instead of
+  // sending a separate request for every single letter typed.
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -276,7 +277,7 @@ export function PatientsPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div className="relative w-full max-w-sm">
-          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-600" />
           <Input
             placeholder="Search by name, patient number, or phone"
             className="h-10 pl-9"
@@ -294,18 +295,19 @@ export function PatientsPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50 hover:bg-slate-50">
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Patient</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Patient no.</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Gender</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Phone</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Blood group</TableHead>
+              <TableHead>Patient</TableHead>
+              <TableHead>Patient no.</TableHead>
+              <TableHead>Gender</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Blood group</TableHead>
+              <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading &&
               Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 5 }).map((__, j) => (
+                  {Array.from({ length: 6 }).map((__, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-24" />
                     </TableCell>
@@ -329,12 +331,21 @@ export function PatientsPage() {
                   }}
                 >
                   <TableCell className="font-medium text-slate-900">
-                    {patient.firstName} {patient.lastName}
+                    <div className="flex items-center gap-2.5">
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[11px] font-semibold text-blue-600">
+                        {patient.firstName[0]}
+                        {patient.lastName[0]}
+                      </span>
+                      {patient.firstName} {patient.lastName}
+                    </div>
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-slate-500">{patient.patientNumber}</TableCell>
+                  <TableCell className="font-mono text-xs text-slate-600">{patient.patientNumber}</TableCell>
                   <TableCell className="text-slate-700 capitalize">{patient.gender.toLowerCase()}</TableCell>
                   <TableCell className="text-slate-700">{patient.phone || '—'}</TableCell>
                   <TableCell className="text-slate-700">{patient.bloodGroup ?? 'UNKNOWN'}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={patient.status} />
+                  </TableCell>
                 </TableRow>
               ))}
           </TableBody>
@@ -354,7 +365,7 @@ export function PatientsPage() {
 
         {data && data.total > 0 && (
           <div className="flex items-center justify-between border-t border-border px-4 py-3">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600">
               Showing {(data.page - 1) * data.limit + 1}-{Math.min(data.page * data.limit, data.total)} of{' '}
               {data.total}
             </p>
