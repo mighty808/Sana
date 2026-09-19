@@ -7,17 +7,19 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { formatDateTime } from '@/lib/date'
 
 const PAGE_SIZE = 50
 
-// The backend filters by EXACT equality (`query.action = filters.action`,
-// `query.resource = filters.resource` — see auditLog.service.ts, no regex/
-// partial matching), so a free-text field would silently return zero
-// results for anything not typed in the exact stored casing. Dropdowns of
-// the real, fixed set of values every logAction() call site in the backend
-// actually uses (grepped across every controller) give a correct filter
-// experience instead. No shared enum exists for these on the backend, so
-// this list has to be kept in sync by hand if a new action is ever logged.
+// The server filters by exact matching (`query.action = filters.action` and
+// `query.resource = filters.resource` — see auditLog.service.ts; there's no
+// partial or case-insensitive matching). That means a free-text search box
+// would silently return zero results if the typed text didn't match the
+// stored casing exactly. Using dropdowns of the real, fixed set of values
+// that every logAction() call in the backend actually uses (found by
+// searching across every controller) avoids that problem. There's no shared
+// list of these values on the backend, so this list has to be updated by
+// hand whenever a new action gets logged there.
 const KNOWN_ACTIONS = [
   'LOGIN_SUCCESS',
   'LOGIN_FAILURE',
@@ -26,14 +28,16 @@ const KNOWN_ACTIONS = [
   'USER_CREATED',
   'PATIENT_REGISTERED',
   'PATIENT_UPDATED',
-  'DEPARTMENT_CREATED',
-  'DEPARTMENT_UPDATED',
   'APPOINTMENT_BOOKED',
   'APPOINTMENT_STATUS_UPDATED',
   'ENCOUNTER_OPENED',
   'VITALS_RECORDED',
+  'VITALS_UPDATED',
   'DIAGNOSIS_ADDED',
+  'DIAGNOSIS_UPDATED',
+  'ENCOUNTER_COMPLETED',
   'LAB_ORDER_CREATED',
+  'LAB_ORDER_UPDATED',
   'LAB_RESULT_ENTERED',
   'LAB_RESULT_RELEASED',
   'AI_CONSULTED',
@@ -45,7 +49,6 @@ const KNOWN_ACTIONS = [
 const KNOWN_RESOURCES = [
   'User',
   'Patient',
-  'Department',
   'Appointment',
   'Encounter',
   'LabOrder',
@@ -55,13 +58,11 @@ const KNOWN_RESOURCES = [
   'Payment',
 ] as const
 
-function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
 
-// Turns 'LAB_RESULT_RELEASED' into 'Lab result released' — the raw action
-// constants (see audit.service.ts's call sites) are SCREAMING_SNAKE_CASE,
-// meant for machine filtering, not display.
+// Turns 'LAB_RESULT_RELEASED' into 'Lab result released'. The raw action
+// names (see audit.service.ts's call sites) are written in
+// ALL_CAPS_WITH_UNDERSCORES, which is meant for filtering by code, not for
+// showing to a person.
 function humanizeAction(action: string) {
   const lower = action.toLowerCase().replace(/_/g, ' ')
   return lower.charAt(0).toUpperCase() + lower.slice(1)
@@ -126,11 +127,11 @@ export function AuditLogsPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50 hover:bg-slate-50">
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Action</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Resource</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">By</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">IP</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">When</TableHead>
+              <TableHead>Action</TableHead>
+              <TableHead>Resource</TableHead>
+              <TableHead>By</TableHead>
+              <TableHead>IP</TableHead>
+              <TableHead>When</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -155,10 +156,10 @@ export function AuditLogsPage() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-slate-700">
-                    {log.user ? `${log.user.firstName} ${log.user.lastName}` : <span className="text-slate-400">System</span>}
+                    {log.user ? `${log.user.firstName} ${log.user.lastName}` : <span className="text-slate-600">System</span>}
                   </TableCell>
-                  <TableCell className="font-mono text-xs text-slate-500">{log.ipAddress || '—'}</TableCell>
-                  <TableCell className="text-xs text-slate-500">{formatWhen(log.createdAt)}</TableCell>
+                  <TableCell className="font-mono text-xs text-slate-600">{log.ipAddress || '—'}</TableCell>
+                  <TableCell className="text-xs text-slate-600">{formatDateTime(log.createdAt)}</TableCell>
                 </TableRow>
               ))}
           </TableBody>
@@ -170,7 +171,7 @@ export function AuditLogsPage() {
 
         {data && data.total > 0 && (
           <div className="flex items-center justify-between border-t border-border px-4 py-3">
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-slate-600">
               Showing {(data.page - 1) * data.limit + 1}-{Math.min(data.page * data.limit, data.total)} of {data.total}
             </p>
             <div className="flex items-center gap-2">
