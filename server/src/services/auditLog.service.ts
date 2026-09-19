@@ -12,16 +12,15 @@ interface AuditLogFilters {
 }
 
 // Lists audit log entries, newest first — the "who did what, when" trail
-// the blueprint's security section requires be viewable (GET /audit-logs,
-// Admin only — enforced by the route's requirePermission('auditlog.read')).
-// Supports narrowing by action/resource/user for actually investigating
-// something, plus the same NaN-safe pagination every other list endpoint
-// uses (see utils/pagination.ts).
+// that GET /audit-logs shows an Admin (only an Admin can reach this, via
+// the route's requirePermission('auditlog.read')). This can be narrowed
+// down by action, resource, or user when actually investigating
+// something, and uses the same safe pagination every other list endpoint uses.
 export async function listAuditLogs(filters: AuditLogFilters) {
-  // `user`, if given, must be a real ObjectId — without this check, an
-  // invalid value (e.g. a typo) would reach Mongoose as a raw CastError
-  // (an uncaught 500) instead of the clean 400 every other id-taking
-  // endpoint in the app produces via this same helper.
+  // If a `user` filter is given, it has to be a real, valid id. Without
+  // this check, a bad value (a typo, say) would reach Mongoose as a raw
+  // error and come back as an unhandled 500, instead of the clean 400
+  // every other id-taking endpoint gives through this same helper.
   if (filters.user) assertValidObjectId(filters.user, 'user')
 
   const { page, limit, skip } = resolvePagination(filters, { maxLimit: 200 })
@@ -33,9 +32,9 @@ export async function listAuditLogs(filters: AuditLogFilters) {
 
   const [logs, total] = await Promise.all([
     AuditLog.find(query)
-      // `user` is restricted to PUBLIC_USER_FIELDS — the same passwordHash-
-      // leak concern that applies to populating a doctor on an appointment
-      // (see Phase 4's review fix) applies equally here.
+      // Only the public fields of `user` are populated here, so this
+      // never accidentally sends back a password hash — the same concern
+      // that applies whenever a doctor gets populated onto an appointment.
       .populate({ path: 'user', select: PUBLIC_USER_FIELDS })
       .sort({ createdAt: -1 })
       .skip(skip)
