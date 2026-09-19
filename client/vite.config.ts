@@ -18,13 +18,18 @@ export default defineConfig({
     },
   },
   server: {
+    // Both of these are overridable so the Playwright stack can run on its own
+    // ports (see client/e2e/fixtures/ports.ts) alongside a developer's normal
+    // dev server, instead of fighting it for 5173/3000. Unset — which is every
+    // normal `npm run dev` — the defaults are exactly what they always were.
+    port: Number(process.env.E2E_CLIENT_PORT ?? 5173),
     // During `npm run dev`, forward any request to /api/* on to the Express
     // backend running on port 3000, so the frontend can call relative paths
     // like `/api/v1/auth/login` without hardcoding the backend's origin
     // (and without hitting CORS issues in the browser).
     proxy: {
       '/api': {
-        target: 'http://localhost:3000',
+        target: process.env.E2E_API_TARGET ?? 'http://localhost:3000',
         changeOrigin: true,
       },
       // Socket.IO's handshake is a plain HTTP request that upgrades to a
@@ -33,7 +38,7 @@ export default defineConfig({
       // same-origin default path (no hardcoded backend URL) in both dev
       // (via this proxy) and production (served from the same origin).
       '/socket.io': {
-        target: 'http://localhost:3000',
+        target: process.env.E2E_API_TARGET ?? 'http://localhost:3000',
         changeOrigin: true,
         ws: true,
       },
