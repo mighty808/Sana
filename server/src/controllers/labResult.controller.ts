@@ -3,7 +3,8 @@ import * as labResultService from '../services/labResult.service.js'
 import * as auditService from '../services/audit.service.js'
 import { ok } from '../utils/apiResponse.js'
 
-// POST /lab-results — requires 'labresult.create' (Admin only in this MVP).
+// POST /lab-results — requires 'labresult.create' (Lab Technician only —
+// see types/permissions.ts's LAB_TECH entry).
 export async function create(req: Request, res: Response) {
   const result = await labResultService.createLabResult(req.body, req.user!.id)
   await auditService.logAction(req, req.user!.id, 'LAB_RESULT_ENTERED', 'LabResult', result.id, {
@@ -19,7 +20,9 @@ export async function list(req: Request, res: Response) {
   return ok(res, results)
 }
 
-// PATCH /lab-results/:id/release — requires 'labresult.release' (Admin only).
+// PATCH /lab-results/:id/release — requires 'labresult.release' (Lab
+// Technician only — they release results directly, no separate Admin
+// sign-off step).
 export async function release(req: Request, res: Response) {
   const result = await labResultService.releaseLabResult(req.params.id as string, req.user!.id)
   await auditService.logAction(req, req.user!.id, 'LAB_RESULT_RELEASED', 'LabResult', result.id)
