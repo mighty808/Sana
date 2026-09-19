@@ -11,29 +11,30 @@ interface CreatePaymentInput {
   reference?: string
 }
 
-// Records a payment against an invoice, atomically updating the invoice's
-// running amountPaid/balance/status AND creating the Payment document
-// itself, all inside one MongoDB transaction. Without the transaction,
-// these were two separate writes — if the invoice update succeeded but the
-// Payment.create() that followed then failed (a validation edge case, a
-// transient DB error, a process crash), the invoice would be permanently
-// left showing a payment that doesn't actually exist anywhere as a Payment
-// document. Wrapping both in `session.withTransaction` means either both
-// writes commit or neither does — MongoDB Atlas (including the free M0
-// tier) runs as a replica set, so transactions are available.
+// Records a payment against an invoice. This updates the invoice's
+// amountPaid, balance, and status, and creates the Payment document, all
+// inside one MongoDB transaction. Without a transaction, these would be
+// two separate writes — and if the invoice update succeeded but creating
+// the Payment document afterward then failed for any reason, the invoice
+// would be permanently left showing a payment that doesn't actually exist
+// as a real Payment record anywhere. Wrapping both in
+// `session.withTransaction` means either both writes go through, or
+// neither does.
 //
-// Within the transaction, the invoice update itself is still the same
-// single atomic pipeline update described before: amountPaid, balance, and
-// status are computed and written together as one step, so two payments
-// racing on the same invoice can't both independently pass an overpayment
-// check against a stale balance — MongoDB serializes the two transactions,
-// and whichever commits second sees the first's already-applied amountPaid.
+// Inside the transaction, the invoice update is still one single
+// database operation that computes and writes amountPaid, balance, and
+// status all together. That matters if two payments come in for the same
+// invoice at almost the same time: MongoDB processes the two transactions
+// one after the other, not at the same time, so the second payment to
+// commit always sees the first payment's amount already applied — neither
+// one can check the balance against stale, out-of-date numbers.
 //
-// Amounts are rounded to the nearest pesewa (roundMoney) and the
-// overpayment/PAID-cutoff comparisons use a small epsilon (MONEY_EPSILON)
-// rather than exact equality — JS floating-point arithmetic can leave a
-// fully-paid invoice's computed balance at something like 0.00000000003
-// instead of exactly 0, which an exact `<= 0` check would treat as "still owing."
+// Amounts are rounded to the nearest pesewa, and the checks for
+// overpayment or "has this reached PAID" use a small tolerance
+// (MONEY_EPSILON) instead of comparing for an exact match. That's because
+// floating-point math can leave a fully-paid invoice with a computed
+// balance like 0.00000000003 instead of a clean 0 — an exact `<= 0` check
+// would wrongly treat that as still owing money.
 export async function recordPayment(input: CreatePaymentInput, receivedBy: string) {
   assertValidObjectId(input.invoice, 'invoice')
   const amount = roundMoney(input.amount)
@@ -66,18 +67,19 @@ export async function recordPayment(input: CreatePaymentInput, receivedBy: strin
             },
           },
         ],
-        // `updatePipeline: true` is required by Mongoose (not the raw
-        // MongoDB driver) whenever the update argument is an array —
-        // without it, Mongoose rejects the call outright before it ever
-        // reaches MongoDB, assuming an array update was passed by mistake.
+        // Mongoose requires `updatePipeline: true` whenever the update
+        // argument is an array like this one, or it rejects the call
+        // before it even reaches MongoDB, assuming the array was passed
+        // in by mistake.
         { session, returnDocument: 'after', updatePipeline: true },
       )
 
       if (!updatedInvoice) {
-        // The conditional update matched nothing — figure out why so the
-        // error message is actually useful, same disambiguation pattern as
-        // labResult.service.ts's createLabResult. Reading with `.session()`
-        // keeps this lookup inside the same transaction snapshot.
+        // The update above matched nothing, so figure out why, to give a
+        // useful error message — the same approach
+        // labResult.service.ts's createLabResult uses. Reading with
+        // `.session()` keeps this lookup inside the same transaction, so
+        // it sees a consistent view of the data.
         const invoice = await Invoice.findById(input.invoice).session(session)
         if (!invoice) throw new AppError('Invoice not found', 404, 'INVOICE_NOT_FOUND')
         if (invoice.status === 'VOIDED') {
