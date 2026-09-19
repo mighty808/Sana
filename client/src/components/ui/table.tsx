@@ -63,12 +63,19 @@ function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
   )
 }
 
+// "Label-caps" header style — 11px, bold, uppercase, wide tracking, muted
+// color. Was previously copy-pasted at every single TableHead call site
+// across every table page (Patients/Appointments/Encounters/LabOrders/
+// LabResults/Invoices/InvoiceDetail/Users/AuditLogs) as an identical
+// `className="text-xs font-medium tracking-wider text-slate-600 uppercase"`
+// string — moved here so it's the default and every table stays in sync
+// with one edit instead of nine.
 function TableHead({ className, ...props }: React.ComponentProps<"th">) {
   return (
     <th
       data-slot="table-head"
       className={cn(
-        "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+        "h-10 px-2 text-left align-middle text-[11px] font-bold tracking-wider text-muted-foreground uppercase whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
         className
       )}
       {...props}
