@@ -23,18 +23,16 @@ const patientSchema = new Schema(
       enum: BLOOD_GROUPS,
       default: 'UNKNOWN',
     },
-    // Embedded subdocument (not a separate collection) since it's simple,
-    // always small, and never queried independently — matches blueprint
-    // section 5.2's guidance to embed small, non-reused nested data.
+    // Stored directly inside the patient document, not as its own
+    // collection — it's small, simple, and never looked up on its own.
     emergencyContact: {
       name: { type: String, trim: true },
       phone: { type: String, trim: true },
     },
-    // Links this patient record to a login account with role PATIENT, IF one
-    // exists. Lets a logged-in patient's `req.user.id` be matched against
-    // `patient.user` to enforce "patients can only see their own records" (FR18).
-    // Not part of the blueprint's literal collection field list, but required
-    // to actually implement that requirement.
+    // Links this patient record to a login account with the PATIENT role,
+    // if one exists. This is how a logged-in patient's own user id gets
+    // matched against `patient.user`, to enforce that a patient can only
+    // ever see their own records.
     user: { type: Schema.Types.ObjectId, ref: 'User' },
     // Soft-delete flag — VOIDED records are excluded from normal search
     // results but never physically deleted, preserving the clinical history.
