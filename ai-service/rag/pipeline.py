@@ -67,6 +67,82 @@ TOP_K = 5
 # match. 0.2 sits cleanly in the gap between those two clusters.
 MIN_RELEVANCE_SCORE = 0.2
 
+# A lexical safety net on top of MIN_RELEVANCE_SCORE. The embedding model
+# misses direct terminology matches often enough to matter clinically — see
+# tests/test_retrieval.py's test_known_false_refusals: a stroke query and a
+# UTI query both retrieve the right document within the top-K but score below
+# MIN_RELEVANCE_SCORE, so the model was told nothing relevant was found for a
+# time-critical presentation. This only ever looks at documents the vector
+# search already surfaced, so it can't ground a passage retrieval never
+# found — it just stops a near-miss on wording from becoming a refusal.
+#
+# "Distinctive" means rare across the knowledge base (df <= _RARE_DF): a
+# shared word like "snake" (appears in exactly one entry) is strong evidence
+# the passage is actually about the question, whereas a shared word like
+# "fever" (appears in dozens of entries) is not. This is what keeps the net
+# from reintroducing the out-of-KB leakage a lower MIN_RELEVANCE_SCORE would
+# cause — measured against rag/eval_data.py's OUT_OF_KB_QUERIES, it produces
+# one accidental match ("current", now stopworded) out of 336 query/document
+# pairs checked.
+_RARE_DF = 3
+_MIN_SHARED_WORDS = 3
+
+_KEYWORD_RE = re.compile(r"[a-z]{4,}")
+
+# General English filler plus clinical-note boilerplate that recurs across
+# nearly every knowledge base entry (e.g. "assessment", "urgent", "severe")
+# and would otherwise count as a "shared word" with almost any query.
+_KEYWORD_STOPWORDS = frozenset(
+    """
+    a an the and or with for from that this into also each per such than
+    then when where which while about after before between during without
+    within over under more most some any all both other another only just
+    very can may might must should would could not but are was were been
+    being does did doing what whats how who current
+    patient patients presents presenting presentation assess assessing
+    assessment management manage managed treatment treated treat therapy
+    urgent urgently severe severity mild moderate common including typical
+    typically signs symptom symptoms condition diagnosis diagnosed
+    diagnostic requires required require immediate immediately facility
+    referral refer hospital clinical care risk factor factors following
+    given level levels onset early later first before warrant warrants
+    warranting consider considering likely usually often least national
+    local standard general ghana stg
+    """.split()
+)
+
+
+def _keywords(text: str) -> set[str]:
+    return {w for w in _KEYWORD_RE.findall(text.lower()) if w not in _KEYWORD_STOPWORDS}
+
+
+def _document_frequencies() -> dict[str, int]:
+    """
+    How many knowledge-base entries each keyword appears in. Computed once
+    from DOCUMENTS (not per request) and cached, since the knowledge base
+    only changes when the source file does.
+    """
+    df: dict[str, int] = {}
+    for d in DOCUMENTS:
+        for word in _keywords(d["title"] + " " + d["text"]):
+            df[word] = df.get(word, 0) + 1
+    return df
+
+
+_document_frequencies_cache: dict[str, int] | None = None
+
+
+def _keyword_matched(query_words: set[str], doc: Document) -> bool:
+    global _document_frequencies_cache
+    if _document_frequencies_cache is None:
+        _document_frequencies_cache = _document_frequencies()
+
+    doc_words = _keywords(doc.metadata.get("title", "") + " " + doc.page_content)
+    shared = query_words & doc_words
+    distinctive = any(_document_frequencies_cache.get(w, 0) <= _RARE_DF for w in shared)
+    return distinctive or len(shared) >= _MIN_SHARED_WORDS
+
+
 DISCLAIMER = (
     "Sana AI provides decision support only — it does not diagnose. "
     "This response synthesizes retrieved reference material and must be "
@@ -190,10 +266,11 @@ def _get_llm() -> ChatGroq:
         # of this token budget on its own internal reasoning before it
         # writes the visible answer, so the limit needs to leave room for
         # that in addition to "a few sentences of actual text". Setting it
-        # too low (300 was tried) cut a real answer off mid-word, so 700 is
+        # too low (300 was tried) cut a real answer off mid-word, so 800 is
         # used instead to leave that extra headroom — including for the
         # nurse acuity path below, whose JSON wrapper adds a little more
-        # length on top of the guidance text itself.
+        # length on top of the guidance text itself, and for the reasoning
+        # room the format change below now asks for.
         #
         # `timeout` and `max_retries` exist to stay inside the caller's
         # patience rather than the library's. Express aborts this request at
@@ -206,8 +283,15 @@ def _get_llm() -> ChatGroq:
         # retried into a second slow response.
         _llm = ChatGroq(
             model=LLM_MODEL,
-            temperature=0.2,
-            max_tokens=700,
+            # 0.2 produced answers that were technically correct but read as
+            # template-filling rather than a colleague reasoning through the
+            # case — the same handful of stock phrases every time. 0.4 keeps
+            # answers reproducible enough for the eval script to be useful
+            # (rag/eval.py) while giving the model room to actually vary its
+            # phrasing with the specifics of each case instead of reaching
+            # for the same safe sentence.
+            temperature=0.4,
+            max_tokens=800,
             timeout=15,
             max_retries=1,
         )
@@ -319,15 +403,22 @@ ACUITY_SYSTEM_PROMPT = (
     "given;\n"
     '  "reasons": a list of up to 3 short phrases (a few words each) naming the '
     "specific findings driving that level — an empty list if STABLE;\n"
-    '  "guidance": 2-4 sentences of plain prose for the nursing care team on what '
-    "to watch for and do before the doctor arrives, grounded in the retrieved "
-    "passages. Never invent a specific diagnosis as fact.\n\n"
-    "Only state a specific numeric threshold, dose, or named drug/regimen if it "
-    "appears in the retrieved passages — otherwise speak in general terms (e.g. "
-    "'an appropriate antibiotic per protocol' rather than naming one). If the "
-    "retrieved material says no passages are strongly relevant, say so plainly in "
-    "the guidance and default to STABLE unless the vitals/complaint themselves are "
-    "clearly dangerous, rather than speculating beyond what was retrieved."
+    '  "guidance": 3-5 sentences of plain prose for the nursing care team, written '
+    "the way an experienced colleague would talk through this specific patient — "
+    "not a generic summary of the topic. Name the actual vitals/complaint value "
+    "that concerns you and connect it directly to the specific red flag or "
+    "threshold in the retrieved passages that makes it concerning, then say what "
+    "the nursing team should watch for and do before the doctor arrives. Never "
+    "invent a specific diagnosis as fact.\n\n"
+    "When the retrieved passages name a specific numeric threshold, dose, or drug/"
+    "regimen, state it directly and exactly as given — that specificity is the "
+    "reason this tool exists, and hedging it into 'an appropriate antibiotic per "
+    "protocol' when the passage actually names one is a worse answer, not a safer "
+    "one. Only fall back to a general term when the passages themselves don't name "
+    "specifics. If the retrieved material says no passages are strongly relevant, "
+    "say so plainly in the guidance and default to STABLE unless the "
+    "vitals/complaint themselves are clearly dangerous, rather than speculating "
+    "beyond what was retrieved."
 )
 
 # No re.MULTILINE here on purpose: ^/$ must anchor to the whole string, not
@@ -373,23 +464,31 @@ SYSTEM_PROMPT = (
     "hospital system used by licensed doctors, nurses, and laboratory technicians. "
     "You do not diagnose and you do not replace clinical judgement. Given a "
     "hospital staff member's question, anonymized patient context, and retrieved "
-    "reference passages, synthesize a clinically useful answer grounded in the "
-    "retrieved passages. If the passages don't clearly cover the situation, say "
-    "so plainly in one sentence rather than speculating beyond them. Never invent "
-    "a specific diagnosis as fact — frame guidance in terms of differentials, red "
-    "flags, and recommended next steps. Only state a specific numeric threshold, "
-    "dose, or named drug/regimen if it appears in the retrieved passages — "
-    "otherwise speak in general terms (e.g. 'an appropriate antibiotic per "
-    "protocol' rather than naming one). If the retrieved material says no "
-    "passages are strongly relevant, lead with that rather than answering as if "
-    "the retrieved passages were solid grounding.\n\n"
-    "STRICT FORMAT — this is a quick decision-support summary, not an "
-    "explanation: respond in 2-4 sentences of plain prose, optionally "
-    "followed by up to 3 short bullet points ONLY if there are specific red "
-    "flags or next steps worth calling out separately. Never write more than "
-    "one paragraph of prose. Never restate the question, the patient "
-    "context, or the retrieved passages back — go straight to the answer. "
-    "No headers, no lengthy caveats beyond the one-sentence rule above."
+    "reference passages, reason through THIS SPECIFIC CASE the way an experienced "
+    "colleague would — not a textbook summary of the topic in general. Actually "
+    "use the patient context you were given: if a vital, symptom, or lab value was "
+    "provided, name it explicitly and say what makes it (or doesn't make it) "
+    "concerning against the retrieved passages, rather than giving an answer that "
+    "would read the same regardless of what was provided. If the passages don't "
+    "clearly cover the situation, say so plainly in one sentence rather than "
+    "speculating beyond them. Never invent a specific diagnosis as fact — frame "
+    "guidance in terms of differentials, red flags, and recommended next steps.\n\n"
+    "When a retrieved passage names a specific numeric threshold, dose, or drug/"
+    "regimen, state it directly and exactly as given — that specificity is the "
+    "reason this tool exists, and hedging a passage's own named drug into 'an "
+    "appropriate antibiotic per protocol' is a worse answer, not a safer one. Only "
+    "fall back to a general term when the passages themselves don't name "
+    "specifics — never invent a specific that isn't in them. If the retrieved "
+    "material says no passages are strongly relevant, lead with that rather than "
+    "answering as if the retrieved passages were solid grounding.\n\n"
+    "FORMAT — this is decision support someone is reading between patients, not an "
+    "essay, but it must show real reasoning about this case: 3-6 sentences of "
+    "plain prose that reason from the specific findings given to a conclusion, "
+    "optionally followed by up to 4 short bullet points for red flags or next "
+    "steps worth calling out separately. Never restate the question or the "
+    "patient context back verbatim before answering — reasoning through the "
+    "specifics is expected, repeating them is not. No headers, no lengthy caveats "
+    "beyond what's instructed above."
 )
 
 
@@ -409,12 +508,17 @@ def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> d
 
     store = _get_vectorstore()
     results = store.similarity_search_with_relevance_scores(query, k=TOP_K)
+    query_words = _keywords(query)
 
-    # Only passages that clear MIN_RELEVANCE_SCORE are shown to the LLM as
-    # grounding material — a weak match is worse than no match, since the
-    # model tends to synthesize an answer from whatever it's given even
-    # when nothing retrieved is actually relevant to the question.
-    grounded_results = [(doc, score) for doc, score in results if score >= MIN_RELEVANCE_SCORE]
+    # A passage grounds the answer if it clears MIN_RELEVANCE_SCORE, or if it
+    # didn't but shares distinctive vocabulary with the query (see
+    # _keyword_matched above) — a weak match on neither is worse than no
+    # match, since the model tends to synthesize an answer from whatever it's
+    # given even when nothing retrieved is actually relevant to the question.
+    is_grounded = {
+        id(doc): score >= MIN_RELEVANCE_SCORE or _keyword_matched(query_words, doc) for doc, score in results
+    }
+    grounded_results = [(doc, score) for doc, score in results if is_grounded[id(doc)]]
 
     # Logged before the LLM call rather than after, so a request that later
     # times out still leaves a record of what was retrieved for it. The top
@@ -496,7 +600,7 @@ def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> d
                 "title": doc.metadata.get("title", "Untitled"),
                 "excerpt": doc.page_content[:280],
                 "score": round(float(score), 4),
-                "grounded": score >= MIN_RELEVANCE_SCORE,
+                "grounded": is_grounded[id(doc)],
             }
             for doc, score in results
         ],
