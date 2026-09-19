@@ -2,22 +2,25 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ApiSuccess } from '@/lib/api'
 import type { Appointment, AppointmentStatus } from '@/types/appointment'
 
-// Mirrors server/src/schemas/appointment.ts's createAppointmentSchema — no
-// `doctor` field: only Doctor holds 'appointment.create' now and always
-// books for themselves, derived server-side from the caller's own id.
+// Matches server/src/schemas/appointment.ts's createAppointmentSchema. The
+// `doctor` field is required here because only a nurse holds the
+// 'appointment.create' permission now, and a nurse has no doctor identity of
+// her own for the system to assume. So she has to pick which doctor the
+// appointment is for (see the doctor picker on BookAppointmentDialog, backed
+// by useDoctors()).
 export interface AppointmentInput {
   patient: string
-  department: string
+  doctor: string
   date: string
   startTime: string
   endTime: string
   reason?: string
 }
 
-// GET /appointments — the backend itself narrows what comes back based on
-// the caller's role (see appointment.service.ts's listAppointments), so
-// there's no separate "my appointments" vs "all appointments" query here —
-// it's the same one endpoint for every role.
+// Calls GET /appointments. The server itself decides what to return based
+// on the logged-in user's role (see appointment.service.ts's
+// listAppointments), so there's no separate "my appointments" versus "all
+// appointments" query here. Every role uses this same one endpoint.
 export function useAppointments() {
   return useQuery({
     queryKey: ['appointments'],
