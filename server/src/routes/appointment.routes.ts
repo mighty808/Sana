@@ -16,17 +16,22 @@ const router = Router()
  *   post:
  *     summary: Book a new appointment
  *     tags: [Appointments]
+ *     description: >
+ *       Nurse-only. Since a nurse isn't a doctor themselves, they must pick
+ *       which doctor the appointment is with, so `doctor` is a required
+ *       field (see GET /users/doctors for the list they pick from). The
+ *       server checks this value itself rather than just trusting whatever
+ *       is sent.
  *     requestBody:
  *       required: true
  *       content:
  *         application/json:
  *           schema:
  *             type: object
- *             required: [patient, doctor, department, date, startTime, endTime]
+ *             required: [patient, doctor, date, startTime, endTime]
  *             properties:
  *               patient: { type: string, description: Patient ObjectId }
- *               doctor: { type: string, description: User ObjectId (must have the DOCTOR role) }
- *               department: { type: string, description: Department ObjectId }
+ *               doctor: { type: string, description: Doctor's User ObjectId }
  *               date: { type: string, format: date }
  *               startTime: { type: string, example: "09:00" }
  *               endTime: { type: string, example: "09:30" }
