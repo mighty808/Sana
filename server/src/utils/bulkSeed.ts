@@ -1,18 +1,17 @@
-// Generates realistic-looking bulk demo data on top of the roles + single
-// test account per role that utils/seed.ts already creates — this is what
-// blueprint section 13.2 calls for: enough patients/appointments/encounters/
-// lab orders that the demo script (section 10.1) and screenshots for the
-// final report have real, varied data to show instead of a nearly-empty
-// database with just 4 accounts and 1 patient.
+// Generates realistic-looking bulk demo data on top of the roles and single
+// test account per role that utils/seed.ts already creates. The goal is to
+// have enough patients, appointments, encounters, and lab orders that demos
+// and screenshots show a real, varied-looking database instead of a nearly
+// empty one with just a handful of accounts and one patient.
 //
-// Deliberately writes directly via Mongoose models rather than going
-// through the service layer (appointment.service.ts's createAppointment,
-// etc.) — those functions do things appropriate for a live HTTP request
-// (conflict checks, notifications, audit logs) that don't make sense when
-// bulk-generating hundreds of historical records offline.
+// This writes directly through the Mongoose models instead of going through
+// the service layer (appointment.service.ts's createAppointment, etc.) on
+// purpose. Those service functions do extra things that make sense for a
+// live HTTP request, such as conflict checks, notifications, and audit logs,
+// but those extra steps don't make sense when generating hundreds of
+// historical records all at once offline.
 
 import type { Types } from 'mongoose'
-import { Department } from '../models/Department.js'
 import { User, type UserDoc } from '../models/User.js'
 import { Role } from '../models/Role.js'
 import { Patient, type PatientDoc } from '../models/Patient.js'
@@ -24,7 +23,6 @@ import { generateId } from './generateId.js'
 import { hashPassword } from '../services/auth.service.js'
 import { logger } from './logger.js'
 import {
-  DEPARTMENTS,
   CHIEF_COMPLAINTS,
   LAB_TEST_NAMES,
   randomInt,
@@ -39,15 +37,16 @@ import {
   addMinutes,
 } from './seedData.js'
 
-// Same password as the named test accounts (admin@sana.test etc.) — fine
+// Same password as the named test accounts (amaadmin@sana.test etc.) — fine
 // for bulk fictional demo data, never use a fixed password like this for
 // real accounts.
 const BULK_PASSWORD = 'Password123!'
 
-// Creates `count` additional staff users of the given role, skipping name
-// collisions (retried up to a small cap — with ~400 name combinations per
-// gender this essentially never gets close to exhausting attempts for the
-// handful of extra doctors/nurses needed).
+// Creates `count` additional staff users of the given role, skipping over
+// any name that's already been used. It retries up to a small cap, but with
+// roughly 400 possible name combinations per gender, it's never realistically
+// going to run out of attempts for the small number of extra doctors/nurses
+// needed here.
 async function createStaffBatch(
   roleId: Types.ObjectId,
   count: number,
@@ -80,10 +79,11 @@ async function createStaffBatch(
 }
 
 export async function seedBulkClinicalData() {
-  // Guard: if bulk data already looks present, skip entirely — re-running
-  // `npm run seed` in dev shouldn't keep multiplying hundreds of records
-  // every time. 20 is comfortably above the handful of patients created by
-  // manual testing in earlier phases, but well below the 50+ this function creates.
+  // If bulk data already looks like it's present, skip this entirely.
+  // Re-running `npm run seed` in dev shouldn't keep multiplying hundreds of
+  // records every time. 20 is comfortably more than the handful of patients
+  // created by manual testing, but well below the 50+ patients this function
+  // creates, so it's a safe threshold for "has this already run."
   const existingPatientCount = await Patient.countDocuments()
   if (existingPatientCount >= 20) {
     logger.info(`Bulk clinical data already present (${existingPatientCount} patients) — skipping.`)
@@ -92,18 +92,9 @@ export async function seedBulkClinicalData() {
 
   logger.info('Seeding bulk clinical data (patients, staff, appointments, encounters, lab orders)...')
 
-  // --- Departments ---
-  const departments = []
-  for (const dept of DEPARTMENTS) {
-    const doc = await Department.findOneAndUpdate({ name: dept.name }, dept, {
-      upsert: true,
-      returnDocument: 'after',
-    })
-    departments.push(doc!)
-  }
-
-  // --- Staff: top up to 5 doctors / 5 nurses total (doctor@sana.test and
-  // nurse@sana.test from seed() already count toward that 5) ---
+  // --- Staff: top up to 5 doctors and 5 nurses total (kwamedoc@sana.test
+  // and akosuanurse@sana.test, created earlier by seed(), already count
+  // toward that 5) ---
   const [doctorRole, nurseRole] = await Promise.all([
     Role.findOne({ name: 'DOCTOR' }),
     Role.findOne({ name: 'NURSE' }),
@@ -122,12 +113,13 @@ export async function seedBulkClinicalData() {
   const nurses = [...existingNurses, ...newNurses]
   logger.info(`Staff ready: ${doctors.length} doctors, ${nurses.length} nurses`)
 
-  // --- Patients: 50-100, including linking patient@sana.test's login to
-  // one specific Patient record (matching what earlier phases' manual
-  // testing did by hand — now reproducible via the seed script itself) ---
+  // --- Patients: creates 50-100 patients, including linking
+  // kofipatient@sana.test's login to one specific Patient record, the same
+  // linking that used to be done by hand during manual testing and is now
+  // done automatically by the seed script instead ---
   const patients: PatientDoc[] = []
 
-  const patientUser = await User.findOne({ email: 'patient@sana.test' })
+  const patientUser = await User.findOne({ email: 'kofipatient@sana.test' })
   if (patientUser) {
     let linkedPatient = await Patient.findOne({ user: patientUser.id })
     if (!linkedPatient) {
@@ -171,9 +163,10 @@ export async function seedBulkClinicalData() {
     const startTime = randomTimeSlot()
     const isPast = date.getTime() < Date.now()
 
-    // Past appointments have mostly resolved to a terminal status; future
-    // ones are still pending in some pre-visit state — a simple but
-    // reasonable status distribution for demo purposes.
+    // Past appointments are mostly given a final status (completed, no-show,
+    // or cancelled), while future ones are left in an earlier, still-pending
+    // state. This is a simple but reasonable spread of statuses for demo
+    // purposes.
     let status: AppointmentStatus
     if (isPast) {
       const roll = Math.random()
@@ -187,7 +180,6 @@ export async function seedBulkClinicalData() {
         appointmentNumber: await generateId('APT'),
         patient: randomFrom(patients)._id,
         doctor: randomFrom(doctors)._id,
-        department: randomFrom(departments)._id,
         date,
         startTime,
         endTime: addMinutes(startTime, 30),
@@ -198,24 +190,23 @@ export async function seedBulkClinicalData() {
   }
   logger.info(`Appointments ready: ${appointments.length}`)
 
-  // --- Encounters: 50, drawn from COMPLETED past appointments (an
-  // encounter only makes sense for a visit that actually happened) ---
+  // --- Encounters: creates up to 50, drawn from COMPLETED past appointments,
+  // since an encounter only makes sense for a visit that actually happened ---
   const completedAppointments = appointments.filter((a) => a.status === 'COMPLETED')
   const encounterCount = Math.min(50, completedAppointments.length)
   const encounters = []
   for (let i = 0; i < encounterCount; i++) {
     const appt = completedAppointments[i]!
     const startedAt = appt.date
-    // Most seeded encounters are wrapped up (COMPLETED), a few left
-    // IN_PROGRESS so the doctor/nurse dashboards have something to show as
-    // "currently open" during a demo.
+    // Most seeded encounters are wrapped up (COMPLETED), but a few are left
+    // IN_PROGRESS so the doctor and nurse dashboards have something to show
+    // as "currently open" during a demo.
     const isComplete = Math.random() < 0.85
 
     const encounter = await Encounter.create({
       patient: appt.patient,
       doctor: appt.doctor,
       appointment: appt._id,
-      department: appt.department,
       chiefComplaint: randomFrom(CHIEF_COMPLAINTS),
       history: 'No significant past medical history reported.',
       status: isComplete ? 'COMPLETED' : 'IN_PROGRESS',
@@ -224,10 +215,10 @@ export async function seedBulkClinicalData() {
     })
     encounters.push(encounter)
 
-    // One set of vitals per encounter, recorded by a random nurse —
-    // without this, "50 encounters" would otherwise be clinically empty
-    // records with nothing a nurse's dashboard metric (vitalsRecordedToday)
-    // could ever reflect.
+    // Records one set of vitals per encounter, recorded by a random nurse.
+    // Without this, the 50 encounters would be clinically empty records with
+    // nothing for a nurse's dashboard metric (vitalsRecordedToday) to ever
+    // count.
     await VitalSign.create({
       encounter: encounter._id,
       patient: appt.patient,
