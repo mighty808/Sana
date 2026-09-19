@@ -20,3 +20,17 @@ export const requirePermission = (permission: Permission) => {
     next()
   }
 }
+
+// Same as requirePermission, but passes if the user's role has ANY one of
+// the listed permissions — for a route that several roles can reach, each
+// for their own reason, rather than one route gated behind a single
+// permission every caller must share.
+export const requireAnyPermission = (...permissions: Permission[]) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const granted = req.user?.role?.permissions ?? []
+    if (!permissions.some((permission) => granted.includes(permission))) {
+      return fail(res, 'FORBIDDEN', `Missing permission: one of ${permissions.join(', ')}`, 403)
+    }
+    next()
+  }
+}
