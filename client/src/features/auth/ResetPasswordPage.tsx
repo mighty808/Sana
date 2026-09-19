@@ -12,18 +12,19 @@ import { PasswordInput } from '@/components/PasswordInput'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
 
-// Mirrors server/src/schemas/auth.ts's resetPasswordSchema (newPassword
-// min length 8 — the same floor the backend enforces).
+// Matches server/src/schemas/auth.ts's resetPasswordSchema: the new password
+// must be at least 8 characters, the same minimum the server requires.
 const resetPasswordSchema = z.object({
   newPassword: z.string().min(8, 'Password must be at least 8 characters'),
 })
 type ResetPasswordForm = z.infer<typeof resetPasswordSchema>
 
 export function ResetPasswordPage() {
-  // The raw reset token — emailed to the user in a real deployment; in
-  // this MVP (no email service — see server/src/controllers/auth.controller.ts's
-  // forgotPassword) it's logged server-side and expected to be pasted into
-  // the URL as ?token=... for demo purposes.
+  // The raw password-reset token. In a real deployment this would be
+  // emailed to the user, but this version of the app has no email service
+  // set up yet (see server/src/controllers/auth.controller.ts's
+  // forgotPassword). Instead, the token is printed to the server logs, and
+  // for demo purposes someone pastes it into the page's URL as ?token=...
   const [searchParams] = useSearchParams()
   const token = searchParams.get('token') ?? ''
   const navigate = useNavigate()
