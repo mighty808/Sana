@@ -5,8 +5,8 @@ import { AppError } from '../utils/apiResponse.js'
 import type { RoleName } from '../types/permissions.js'
 import type { AuthedUser } from '../types/user.js'
 
-// Creates a new user account (called by an admin via POST /users — there's
-// no public self-registration in this MVP; admin provisions all accounts).
+// Creates a new user account. There's no public self-registration —
+// accounts are only ever created by an Admin, through POST /users.
 export async function createUser(input: {
   email: string
   password: string
@@ -50,4 +50,21 @@ export async function createUser(input: {
 export async function listUsers() {
   const users = await User.find().populate('role').sort({ createdAt: -1 })
   return users as unknown as AuthedUser[]
+}
+
+// Returns every active Doctor account. This powers the doctor picker a
+// nurse uses when booking an appointment, since a nurse isn't a doctor
+// herself and needs to choose which one the appointment is with. This is
+// a narrower lookup than listUsers() on purpose — it's gated on its own
+// 'user.readDoctors' permission in the route, not 'user.manage' or
+// 'appointment.create', so a nurse can reach it without also getting full
+// user-management access, and granting/revoking appointment.create later
+// can't accidentally open up (or lock out) this lookup as a side effect.
+export async function listDoctors() {
+  const doctorRole = await Role.findOne({ name: 'DOCTOR' })
+  if (!doctorRole) return []
+  const doctors = await User.find({ role: doctorRole._id, status: 'ACTIVE' })
+    .populate('role')
+    .sort({ firstName: 1 })
+  return doctors as unknown as AuthedUser[]
 }
