@@ -15,5 +15,9 @@
     "sourceMap": true
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist"]
+  // Test files are checked separately, via tsconfig.test.json — they use
+  // Jest's ambient globals (describe/test/expect), which this config
+  // deliberately doesn't declare, and they must never end up compiled into
+  // dist/ as part of the production build.
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
