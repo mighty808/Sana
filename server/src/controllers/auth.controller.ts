@@ -11,9 +11,9 @@ const REFRESH_COOKIE = 'refreshToken'
 // Shared cookie settings for the refresh token, reused by login/refresh/logout
 // so they all set/clear the exact same cookie.
 const refreshCookieOptions = {
-  httpOnly: true, // not readable by client-side JavaScript — mitigates XSS token theft
+  httpOnly: true, // JavaScript running in the browser can't read this cookie, which helps stop attackers from stealing the token through malicious scripts
   secure: env.nodeEnv === 'production', // only sent over HTTPS in production
-  sameSite: 'lax' as const, // basic CSRF protection while still allowing normal navigation
+  sameSite: 'lax' as const, // gives basic protection against cross-site attacks while still allowing normal navigation
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days, matching JWT_REFRESH_EXPIRES_IN
   path: '/api/v1/auth', // only sent back on auth-related requests, not every API call
 }
@@ -29,18 +29,20 @@ export async function login(req: Request, res: Response) {
     await auditService.logAction(req, user.id, 'LOGIN_SUCCESS', 'User', user.id)
     return ok(res, { accessToken, user: authService.toPublicUser(user) })
   } catch (err) {
-    // Log the failed attempt (with the attempted email, but no user id since
-    // login may have failed before we identified a real account) before
-    // re-throwing so the global error handler still returns the 401 response.
+    // Log the failed attempt, including the email that was tried. There's no
+    // user id to log because login may have failed before we could match it
+    // to a real account. We then re-throw the error so the global error
+    // handler still sends back the 401 response.
     await auditService.logAction(req, undefined, 'LOGIN_FAILURE', 'User', undefined, { email })
     throw err
   }
 }
 
 // POST /auth/refresh
-// Reads the refresh token from its cookie, validates it, and issues a new
-// access + refresh token pair (refreshing the cookie too). No `auth` middleware
-// needed here since the refresh cookie itself IS the credential.
+// Reads the refresh token from its cookie, checks that it's valid, and
+// issues a new access token and refresh token pair (updating the cookie
+// too). No `auth` middleware is needed here because the refresh cookie
+// itself acts as the proof of identity.
 export async function refresh(req: Request, res: Response) {
   const token = req.cookies?.[REFRESH_COOKIE]
   if (!token) return fail(res, 'UNAUTHORIZED', 'Missing refresh token', 401)
@@ -51,8 +53,9 @@ export async function refresh(req: Request, res: Response) {
 }
 
 // POST /auth/logout
-// Requires `auth` middleware (needs to know WHO is logging out). Invalidates
-// all of that user's refresh tokens server-side and clears the cookie client-side.
+// Requires `auth` middleware because it needs to know who is logging out.
+// Invalidates all of that user's refresh tokens on the server and clears
+// the cookie in the browser.
 export async function logout(req: Request, res: Response) {
   if (req.user) {
     await authService.logout(req.user.id)
@@ -69,8 +72,9 @@ export async function forgotPassword(req: Request, res: Response) {
   const { email } = req.body
   const rawToken = await authService.requestPasswordReset(email)
   if (rawToken) {
-    // No email service in MVP scope — log the token so the reset flow can
-    // still be demonstrated end-to-end (grab it from server logs).
+    // There's no email-sending service set up yet, so we log the token
+    // instead. That lets the reset flow still be tested from start to
+    // finish by grabbing the token from the server logs.
     logger.info(`Password reset token for ${email}: ${rawToken}`)
   }
   return ok(res, { message: 'If that account exists, a reset link has been issued.' })
