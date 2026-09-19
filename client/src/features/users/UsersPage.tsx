@@ -6,7 +6,8 @@ import { Plus, UserCog } from 'lucide-react'
 import { toast } from 'sonner'
 import { useUsers, useCreateUser } from './api'
 import { getApiErrorMessage } from '@/lib/api'
-import { ROLE_LABELS } from '@/lib/roles'
+import { ROLE_LABELS, ROLE_NAMES } from '@/lib/roles'
+import type { RoleName } from '@/types/auth'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { PasswordInput } from '@/components/PasswordInput'
@@ -14,6 +15,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { Badge } from '@/components/ui/badge'
+import { StatusBadge } from '@/components/StatusBadge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   Dialog,
@@ -34,16 +36,23 @@ const userFormSchema = z.object({
   firstName: z.string().trim().min(1, 'Required'),
   lastName: z.string().trim().min(1, 'Required'),
   phone: z.string().trim().optional(),
-  role: z.enum(['ADMIN', 'DOCTOR', 'NURSE', 'PATIENT', 'LAB_TECH']),
+  // Built from the shared ROLE_NAMES list (see lib/roles.ts) instead of a
+  // hardcoded copy, so a newly added role can never be silently missing
+  // from account creation the way PHARMACIST once was.
+  role: z.enum(ROLE_NAMES as [RoleName, ...RoleName[]]),
 })
 type UserForm = z.infer<typeof userFormSchema>
 
-const ROLE_BADGE_STYLES: Record<string, string> = {
+// Typed as Record<RoleName, ...> rather than Record<string, ...> so that
+// adding a role to the union without giving it a badge color is a compile
+// error instead of an unstyled badge nobody notices.
+const ROLE_BADGE_STYLES: Record<RoleName, string> = {
   ADMIN: 'border-blue-200 bg-blue-50 text-blue-700',
   DOCTOR: 'border-purple-200 bg-purple-50 text-purple-700',
   NURSE: 'border-sky-200 bg-sky-50 text-sky-700',
   PATIENT: 'border-slate-200 bg-slate-100 text-slate-600',
   LAB_TECH: 'border-teal-200 bg-teal-50 text-teal-700',
+  PHARMACIST: 'border-emerald-200 bg-emerald-50 text-emerald-700',
 }
 
 function initials(firstName: string, lastName: string) {
@@ -171,11 +180,11 @@ function AddUserDialog() {
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        <SelectItem value="ADMIN">Admin</SelectItem>
-                        <SelectItem value="DOCTOR">Doctor</SelectItem>
-                        <SelectItem value="NURSE">Nurse</SelectItem>
-                        <SelectItem value="PATIENT">Patient</SelectItem>
-                        <SelectItem value="LAB_TECH">Lab Technician</SelectItem>
+                        {ROLE_NAMES.map((name) => (
+                          <SelectItem key={name} value={name}>
+                            {ROLE_LABELS[name]}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                     <FormMessage />
@@ -201,7 +210,7 @@ export function UsersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">Every account across all 5 roles.</p>
+        <p className="text-sm text-slate-600">Every account across all 5 roles.</p>
         <AddUserDialog />
       </div>
 
@@ -209,10 +218,10 @@ export function UsersPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50 hover:bg-slate-50">
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">User</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Email</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Role</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Status</TableHead>
+              <TableHead>User</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -249,16 +258,7 @@ export function UsersPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        user.status === 'ACTIVE'
-                          ? 'border-green-200 bg-green-50 text-green-700'
-                          : 'border-slate-200 bg-slate-100 text-slate-500'
-                      }
-                    >
-                      {user.status === 'ACTIVE' ? 'Active' : 'Inactive'}
-                    </Badge>
+                    <StatusBadge status={user.status} />
                   </TableCell>
                 </TableRow>
               ))}
