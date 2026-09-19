@@ -18,6 +18,7 @@ import { InvoiceDetailPage } from '@/features/invoices/InvoiceDetailPage'
 import { DashboardPage } from '@/features/dashboard/DashboardPage'
 import { AnalyticsPage } from '@/features/analytics/AnalyticsPage'
 import { ReferralsPage } from '@/features/referrals/ReferralsPage'
+import { PrescriptionsPage } from '@/features/prescriptions/PrescriptionsPage'
 import { AuditLogsPage } from '@/features/auditLogs/AuditLogsPage'
 import { NotificationsPage } from '@/features/notifications/NotificationsPage'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
@@ -88,6 +89,10 @@ function App() {
 
           <Route element={<ProtectedRoute permission="referral.read" />}>
             <Route path="/referrals" element={<ReferralsPage />} />
+          </Route>
+
+          <Route element={<ProtectedRoute permission="prescription.read" />}>
+            <Route path="/prescriptions" element={<PrescriptionsPage />} />
           </Route>
         </Route>
       </Route>
