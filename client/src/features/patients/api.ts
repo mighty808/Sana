@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ApiSuccess } from '@/lib/api'
 import type { Patient, PatientSearchResult, PatientTimeline } from '@/types/patient'
 
-// The exact body POST/PATCH /patients accepts — mirrors
-// server/src/schemas/patient.ts's createPatientSchema field-for-field so
-// the form never sends something the backend would reject on shape alone.
+// The exact data that POST/PATCH /patients accepts. This matches
+// server/src/schemas/patient.ts's createPatientSchema field-for-field, so the
+// form never sends something the backend would reject just for being shaped wrong.
 export interface PatientInput {
   firstName: string
   lastName: string
@@ -17,10 +17,10 @@ export interface PatientInput {
   emergencyContact?: { name?: string; phone?: string }
 }
 
-// GET /patients?search=&page=&limit= — the list/search screen's data
-// source. `search` participates in the query key so switching search terms
-// or pages is its own cached entry, and TanStack Query refetches
-// automatically whenever any of these change.
+// GET /patients?search=&page=&limit= — the data source for the list and search
+// screen. The `search` value is included as part of the cache key, so each
+// different search term or page number gets its own cached result, and the data
+// automatically refetches whenever any of these values change.
 export function usePatients(params: { search?: string; page: number; limit: number }) {
   return useQuery({
     queryKey: ['patients', params],
