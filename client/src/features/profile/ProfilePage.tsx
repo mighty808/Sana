@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 
-// A simple read-only view of the logged-in user's own account — data comes
-// straight from the auth context (populated by /auth/login or /auth/refresh,
-// which return the exact same public-user shape as GET /users/me — see
-// server/src/services/auth.service.ts's toPublicUser), so no extra fetch is
-// needed just to show this page.
+// A simple read-only view of the logged-in user's own account. The data comes
+// straight from the auth context, which is filled in by /auth/login or
+// /auth/refresh. Those endpoints return the same user data shape as GET
+// /users/me (see server/src/services/auth.service.ts's toPublicUser), so this
+// page doesn't need to make any extra request just to display it.
 export function ProfilePage() {
   const { user } = useAuth()
   if (!user) return null
