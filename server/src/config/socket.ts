@@ -3,6 +3,7 @@ import { Server } from 'socket.io'
 import jwt from 'jsonwebtoken'
 import { env } from './env.js'
 import { User } from '../models/User.js'
+import { logger } from '../utils/logger.js'
 
 // Module-level reference to the Socket.IO server instance.
 // Kept here (instead of passed around everywhere) so any service file can
@@ -64,4 +65,50 @@ export function initSocket(httpServer: HttpServer) {
 export function getIO(): Server {
   if (!io) throw new Error('Socket.IO not initialized')
   return io
+}
+
+// Debounces broadcastWardBoardChanged calls below into one emit per short
+// window, instead of one per write. On a busy ward, several vitals/
+// diagnosis/acuity writes can land within milliseconds of each other across
+// different encounters — without this, each one would independently push
+// every connected Admin/Doctor/Nurse client into refetching the whole ward
+// board, a thundering herd triggered by unrelated single-patient edits.
+// Coalescing them into one emit (carrying every changed encounter id from
+// the window) cuts that down to one refetch per client per window instead
+// of one per write.
+const WARD_BOARD_DEBOUNCE_MS = 400
+let pendingWardBoardEncounterIds: Set<string> | null = null
+let wardBoardDebounceTimer: NodeJS.Timeout | null = null
+
+function flushWardBoardBroadcast() {
+  wardBoardDebounceTimer = null
+  const encounterIds = pendingWardBoardEncounterIds ? [...pendingWardBoardEncounterIds] : []
+  pendingWardBoardEncounterIds = null
+  try {
+    getIO().to('role:ADMIN').to('role:DOCTOR').to('role:NURSE').emit('ward-board.changed', { encounterIds })
+  } catch (err) {
+    logger.error('Failed to broadcast ward-board.changed', err)
+  }
+}
+
+// Tells every connected Admin/Doctor/Nurse (the roles that can see the Ward
+// Board — see types/permissions.ts's 'encounter.read') that something on it
+// may have changed, so their client can refetch GET /encounters/ward-board
+// instead of waiting for its 30s poll. This is deliberately NOT a persisted
+// Notification (see notification.service.ts's notify()) — it's just a live
+// "go refresh" trigger, nothing to read/dismiss later, so it isn't written
+// to the database. The actual emit is debounced (see above); scheduling the
+// timer itself is wrapped in try/catch so a Socket.IO hiccup here can never
+// break the request that triggered it (vitals/diagnosis/acuity/completion
+// all still need to succeed either way).
+export function broadcastWardBoardChanged(encounterId: string) {
+  try {
+    if (!pendingWardBoardEncounterIds) pendingWardBoardEncounterIds = new Set()
+    pendingWardBoardEncounterIds.add(encounterId)
+    if (!wardBoardDebounceTimer) {
+      wardBoardDebounceTimer = setTimeout(flushWardBoardBroadcast, WARD_BOARD_DEBOUNCE_MS)
+    }
+  } catch (err) {
+    logger.error('Failed to schedule ward-board.changed broadcast', err)
+  }
 }
