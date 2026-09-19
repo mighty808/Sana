@@ -2,24 +2,25 @@ import type { Request } from 'express'
 import { AuditLog } from '../models/AuditLog.js'
 import { logger } from '../utils/logger.js'
 
-// Writes one audit-log entry. Called by controllers right after a sensitive
-// action succeeds (or, for failed logins, right after it fails) — per the
-// blueprint's security requirement that every sensitive action records
-// who did it, what they did, when, to which resource, and from which IP.
+// Writes one audit-log entry. A controller calls this right after a
+// sensitive action succeeds — or, for a failed login, right after it
+// fails — so that every sensitive action leaves a record of who did it,
+// what they did, when, to which resource, and from which IP address.
 //
-// `userId` is optional because some events (e.g. a failed login with an
-// unknown email) happen before we know which user, if any, was involved.
+// `userId` is optional, since some events (like a failed login with an
+// email that isn't even registered) happen before it's known which user,
+// if any, was involved.
 //
-// Deliberately never throws — this is called with `await` right before a
-// controller sends its success response (or, for LOGIN_FAILURE, right before
-// re-throwing the real auth error). If AuditLog.create() itself failed and
-// that error were allowed to propagate, it would either turn an
-// already-successful write (e.g. a patient that WAS created) into a
-// client-visible 500, or — worse — replace and hide the original error
-// (e.g. a clean 401 'Invalid credentials') with an unrelated 500. Audit
-// logging is a side-effect of the real operation, not the operation itself,
-// so a failure here is logged for an admin to notice, but never allowed to
-// change the outcome the caller already committed to.
+// This never throws. It's called right before a controller sends its
+// success response (or, for a failed login, right before the real auth
+// error gets re-thrown). If writing the audit log itself failed and that
+// error were allowed to bubble up, it would either turn an
+// already-successful action (like a patient that really was created) into
+// a client-facing 500 error, or — worse — hide the real error (like a
+// clean "invalid credentials" message) behind an unrelated 500. Writing
+// the audit log is a side-effect of the real action, not the action
+// itself, so if it fails, that failure is logged for an admin to notice
+// later, but it never changes what the caller already sees as the result.
 export async function logAction(
   req: Request,
   userId: string | undefined,
