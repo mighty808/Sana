@@ -13,6 +13,7 @@ import {
   Send,
   ClipboardCheck,
   Clock,
+  Pill,
 } from 'lucide-react'
 import { useAuth } from '@/features/auth/useAuth'
 import { useDashboard } from './api'
@@ -20,8 +21,10 @@ import { useAppointments } from '@/features/appointments/api'
 import { useNotifications } from '@/features/notifications/api'
 import { isPopulated } from '@/lib/utils'
 import { formatMoney } from '@/lib/money'
+import { formatLongDate } from '@/lib/date'
 import { StatCard } from '@/components/StatCard'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { StatusBadge } from '@/components/StatusBadge'
 
@@ -32,48 +35,71 @@ function greeting() {
   return 'Good evening'
 }
 
-function todayLabel() {
-  return new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-}
-
-// Today's appointments, reusing the same /appointments data every role
-// with appointment.read already has (Admin/Doctor/Nurse see it scoped by
-// the backend the same way the Appointments page does) — filtered to
-// today client-side rather than a separate "today" endpoint that doesn't
-// exist. Not shown to roles without appointment.read (e.g. Lab Tech).
+// Shows today's appointments, reusing the exact same /appointments data
+// that any role with the appointment.read permission already gets (the
+// server scopes it per role the same way it does for the Appointments
+// page). The list is filtered down to just today's appointments in the
+// browser, since there's no separate "today only" endpoint on the server.
+// This isn't shown to roles that lack appointment.read, such as Lab Tech.
 function TodaysAppointments() {
   const { data: appointments, isLoading } = useAppointments()
   const todayIso = new Date().toDateString()
   const today = appointments?.filter((a) => new Date(a.date).toDateString() === todayIso) ?? []
 
   return (
-    <Card>
+    <Card className="lg:col-span-2">
       <CardHeader>
         <CardTitle className="text-base">Today's appointments</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
-        {isLoading && <Skeleton className="h-24 w-full" />}
-        {!isLoading && today.length === 0 && <p className="text-sm text-slate-500">Nothing scheduled today.</p>}
-        {!isLoading &&
-          today.slice(0, 6).map((appt) => (
-            <div key={appt._id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
-              <div className="min-w-0">
-                <p className="truncate font-medium text-slate-900">
-                  {isPopulated(appt.patient) ? `${appt.patient.firstName} ${appt.patient.lastName}` : 'You'}
-                </p>
-                <p className="tabular-nums text-xs text-slate-500">{appt.startTime}–{appt.endTime}</p>
-              </div>
-              <StatusBadge status={appt.status} />
-            </div>
-          ))}
+      <CardContent className="p-0">
+        {isLoading && (
+          <div className="space-y-2 p-6 pt-0">
+            <Skeleton className="h-8 w-full" />
+            <Skeleton className="h-8 w-full" />
+          </div>
+        )}
+        {!isLoading && today.length === 0 && (
+          <p className="px-6 pb-6 text-sm text-slate-600">Nothing scheduled today.</p>
+        )}
+        {!isLoading && today.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50 hover:bg-slate-50">
+                <TableHead>Time</TableHead>
+                <TableHead>Patient</TableHead>
+                <TableHead>Doctor</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {today.slice(0, 6).map((appt) => (
+                <TableRow key={appt._id}>
+                  <TableCell className="tabular-nums text-slate-700">
+                    {appt.startTime}–{appt.endTime}
+                  </TableCell>
+                  <TableCell className="font-medium text-slate-900">
+                    {isPopulated(appt.patient) ? `${appt.patient.firstName} ${appt.patient.lastName}` : 'You'}
+                  </TableCell>
+                  <TableCell className="text-slate-700">
+                    {isPopulated(appt.doctor) ? `Dr. ${appt.doctor.firstName} ${appt.doctor.lastName}` : '—'}
+                  </TableCell>
+                  <TableCell>
+                    <StatusBadge status={appt.status} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-// Recent activity — reuses the same notifications feed the bell shows
-// (real events: appointments booked, lab results released, etc.), not a
-// separate fabricated "activity log" the backend doesn't provide.
+// Shows recent activity by reusing the same notifications feed shown in the
+// notification bell (real events like appointments being booked or lab
+// results being released), rather than a separate "activity log" feature
+// that the server doesn't actually provide.
 function RecentActivity() {
   const { data: notifications, isLoading } = useNotifications()
 
@@ -82,16 +108,21 @@ function RecentActivity() {
       <CardHeader>
         <CardTitle className="text-base">Recent activity</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-2">
+      <CardContent>
         {isLoading && <Skeleton className="h-24 w-full" />}
-        {!isLoading && notifications?.length === 0 && <p className="text-sm text-slate-500">Nothing yet.</p>}
-        {!isLoading &&
-          notifications?.slice(0, 6).map((n) => (
-            <div key={n._id} className="rounded-md border border-border px-3 py-2 text-sm">
-              <p className="font-medium text-slate-900">{n.title}</p>
-              <p className="text-xs text-slate-500">{n.message}</p>
-            </div>
-          ))}
+        {!isLoading && notifications?.length === 0 && <p className="text-sm text-slate-600">Nothing yet.</p>}
+        {/* Sized to show roughly 3 rows at once — the rest scrolls inside
+            this box instead of pushing the rest of the dashboard down. */}
+        {!isLoading && notifications && notifications.length > 0 && (
+          <div className="max-h-60 space-y-2 overflow-y-auto pr-1">
+            {notifications.map((n) => (
+              <div key={n._id} className="rounded-md border border-border px-3 py-2 text-sm">
+                <p className="font-medium text-slate-900">{n.title}</p>
+                <p className="text-xs text-slate-600">{n.message}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
@@ -104,10 +135,10 @@ export function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">
+        <p className="text-xs font-bold tracking-wider text-muted-foreground uppercase">{formatLongDate(new Date())}</p>
+        <h1 className="mt-1 text-2xl font-semibold text-slate-900">
           {greeting()}, {user?.firstName}
         </h1>
-        <p className="text-sm text-slate-500">{todayLabel()}</p>
       </div>
 
       {isLoading && (
@@ -138,10 +169,10 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Nurse: front-line operator per Sana_Workflow_Prompt.md — today's
-           registrations, how many patients have checked in, and how many
-           checked-in-or-later appointments today still have no encounter
-           at all (i.e. the mandatory vitals step hasn't started yet). */}
+      {/* Nurse view: today's new patient registrations, how many patients
+           have checked in, and how many of today's checked-in (or later)
+           appointments still have no encounter started at all — meaning
+           the required vitals step for that patient hasn't begun yet. */}
       {!isLoading && summary?.role === 'NURSE' && (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
           <StatCard icon={UserPlus} value={summary.patientsRegisteredToday} label="Patients registered today" />
@@ -150,15 +181,24 @@ export function DashboardPage() {
         </div>
       )}
 
-      {/* Lab Tech: the 4-stage queue split Sana_Workflow_Prompt.md calls
-           out — orders not started, orders partway through, orders that
-           finished today, and results this tech personally released today. */}
+      {/* Lab Tech view: the four stages of the lab queue — orders not yet
+           started, orders that are partway through, orders finished today,
+           and results this lab tech personally released today. */}
       {!isLoading && summary?.role === 'LAB_TECH' && (
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
           <StatCard icon={FlaskConical} value={summary.pendingOrders} label="Pending orders" />
           <StatCard icon={Clock} value={summary.inProgressOrders} label="In progress" />
           <StatCard icon={ClipboardCheck} value={summary.completedToday} label="Completed today" />
           <StatCard icon={Send} value={summary.releasedToday} label="Released today" />
+        </div>
+      )}
+
+      {/* Pharmacist view: same two-stat "pending queue" + "done by me
+           today" shape as Lab Tech's, just for the pharmacy workflow. */}
+      {!isLoading && summary?.role === 'PHARMACIST' && (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <StatCard icon={Pill} value={summary.pendingPrescriptions} label="Pending prescriptions" />
+          <StatCard icon={ClipboardCheck} value={summary.dispensedToday} label="Dispensed today" />
         </div>
       )}
 
@@ -170,7 +210,7 @@ export function DashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         {hasPermission('appointment.read') && <TodaysAppointments />}
         <RecentActivity />
       </div>
