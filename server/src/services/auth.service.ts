@@ -24,9 +24,9 @@ export function signRefreshToken(userId: string, tokenVersion: number) {
   } as jwt.SignOptions)
 }
 
-// Hashes a plaintext password with Argon2id (the OWASP-recommended variant —
-// resistant to both GPU cracking and side-channel attacks). Never store or
-// log the plaintext password anywhere.
+// Hashes a plaintext password with Argon2id, a strong, widely-recommended
+// hashing algorithm. The plaintext password itself is never stored or
+// logged anywhere.
 export async function hashPassword(password: string) {
   return argon2.hash(password, { type: argon2.argon2id })
 }
@@ -37,16 +37,17 @@ export async function verifyPassword(hash: string, password: string) {
   return argon2.verify(hash, password)
 }
 
-// Core login logic: looks up the user by email, verifies their password,
-// updates lastLoginAt, and issues a fresh access + refresh token pair.
-// Throws AppError (caught by the global error handler) for any failure —
-// deliberately using the SAME error message/code for "no such user" and
-// "wrong password" so an attacker can't use the error to enumerate valid emails.
+// Core login logic: looks up the user by email, checks their password,
+// updates lastLoginAt, and issues a fresh access and refresh token pair.
+// Any failure throws an AppError that the global error handler catches.
+// "No such user" and "wrong password" both use the exact same error
+// message and code on purpose, so an attacker can't use the difference to
+// figure out which emails are actually registered.
 export async function login(email: string, password: string) {
-  // `.populate('role')` replaces the raw role ObjectId with the full Role
-  // document at RUNTIME, but Mongoose's TypeScript types can't express that
-  // automatically — hence the `as unknown as AuthedUser` cast below, which
-  // just tells TypeScript to trust that the populate() call actually happened.
+  // `.populate('role')` swaps the raw role id for the full Role document
+  // at runtime, but TypeScript's types don't automatically reflect that —
+  // the `as unknown as AuthedUser` cast below just tells TypeScript to
+  // trust that the populate() call actually happened.
   const user = (await User.findOne({ email }).populate('role')) as unknown as AuthedUser | null
   if (!user || user.status !== 'ACTIVE') {
     throw new AppError('Invalid email or password', 401, 'INVALID_CREDENTIALS')
@@ -128,9 +129,9 @@ export async function requestPasswordReset(email: string) {
   user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000) // valid for 1 hour
   await user.save()
 
-  // Email delivery is explicitly out of MVP scope (see blueprint "What Gets CUT"),
-  // so the raw token is just returned to the caller, which logs it — good enough
-  // to demo the full reset flow end-to-end without a real mail server.
+  // There's no email delivery yet, so the raw token is just returned to
+  // the caller, which logs it. That's enough to demo the full reset flow
+  // end to end without needing a real mail server.
   return rawToken
 }
 
