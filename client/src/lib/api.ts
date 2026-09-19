@@ -1,8 +1,9 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios'
 
-// The shape every Sana API response comes back in — see server/src/utils/apiResponse.ts's
-// ok()/fail() helpers, which every controller in the backend uses. Mirroring
-// that shape here means every API call in the app can be typed the same way.
+// This is the shape every Sana API response comes back in — see the ok()
+// and fail() helpers in server/src/utils/apiResponse.ts, which every
+// controller on the backend uses. Matching that shape here means every API
+// call in the app can be typed the same way.
 export interface ApiSuccess<T> {
   success: true
   data: T
@@ -12,46 +13,50 @@ export interface ApiError {
   error: { code: string; message: string }
 }
 
-// The single Axios instance every feature's API calls go through.
-// `baseURL: '/api/v1'` relies on vite.config.ts's dev proxy (and, in
-// production, on the client being served from the same origin as the API)
-// so calls never need a hardcoded host. `withCredentials: true` lets the
-// browser send/receive the httpOnly refresh-token cookie the backend's
-// auth.controller.ts sets on login (see server/src/controllers/auth.controller.ts).
+// This is the single Axios instance that every feature's API calls go
+// through. `baseURL: '/api/v1'` relies on vite.config.ts's dev proxy during
+// development, and in production on the client being served from the same
+// origin as the API, so calls never need a hardcoded server address.
+// `withCredentials: true` lets the browser send and receive the secure
+// refresh-token cookie that the backend sets on login (see
+// server/src/controllers/auth.controller.ts).
 export const api = axios.create({
   baseURL: '/api/v1',
   withCredentials: true,
 })
 
-// The current access token lives here, not in React state — this file has
-// no dependency on React, so the interceptors below can read/write it
-// synchronously on every request without needing to reach into a context.
-// AuthProvider (src/features/auth/AuthContext.tsx) is the only thing that
-// calls setAccessToken(), right after login/refresh/logout.
+// The current access token is stored here, not in React state. This file
+// doesn't depend on React at all, so the interceptors below can read and
+// write the token immediately on every request without needing to reach
+// into a React context. AuthProvider (src/features/auth/AuthContext.tsx) is
+// the only thing that calls setAccessToken(), and it does so right after
+// login, a token refresh, or logout.
 let accessToken: string | null = null
 export function setAccessToken(token: string | null) {
   accessToken = token
 }
-// Read-only counterpart to setAccessToken — used by lib/socket.ts so the
-// Socket.IO handshake can always send whatever the current access token is
-// (it's re-read on every (re)connect attempt, not captured once), without
-// duplicating token state in a second place.
+// This is the read-only counterpart to setAccessToken. It's used by
+// lib/socket.ts so the Socket.IO connection can always send whatever the
+// current access token is (it's read fresh on every connection attempt,
+// not captured once and reused), without storing the token a second time
+// somewhere else.
 export function getAccessToken(): string | null {
   return accessToken
 }
 
-// Called by AuthProvider once, so that when a silent token refresh fails
-// (the refresh cookie itself expired or was revoked), this file can trigger
-// a logout/redirect without importing React Router or the auth context
-// directly (which would create a circular import: api.ts -> AuthContext ->
-// api.ts). AuthProvider registers its own logout function here instead.
+// AuthProvider calls this once to register its own logout function here.
+// That way, when a silent token refresh fails (because the refresh cookie
+// itself expired or was revoked), this file can trigger a logout and
+// redirect without importing React Router or the auth context directly —
+// doing that directly would create a circular import, since api.ts would
+// import AuthContext, which itself imports api.ts.
 let onAuthExpired: (() => void) | null = null
 export function setOnAuthExpired(handler: () => void) {
   onAuthExpired = handler
 }
 
-// Attaches the current access token to every outgoing request — mirrors
-// the backend's `auth` middleware, which expects exactly this header
+// Attaches the current access token to every outgoing request. This matches
+// what the backend's `auth` middleware expects to find in the request
 // (see server/src/middleware/auth.ts).
 api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   if (accessToken) {
@@ -60,20 +65,21 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config
 })
 
-// Extends Axios's request config with a flag marking "this request has
-// already been retried once after a token refresh" — without this, a
-// request that fails again even after a successful refresh (e.g. the user
-// genuinely lacks permission) would otherwise loop forever between 401 and
-// refresh attempts.
+// Adds a flag to Axios's request settings marking "this request has
+// already been retried once after a token refresh." Without this flag, a
+// request that fails again even after a successful refresh — for example,
+// because the user genuinely doesn't have permission — would keep looping
+// forever between failing with a 401 and retrying the refresh.
 interface RetryableConfig extends InternalAxiosRequestConfig {
   _retried?: boolean
 }
 
-// One in-flight refresh promise shared by every request that hits a 401 at
-// the same time — without this, 5 simultaneous requests failing together
-// would each independently call /auth/refresh, racing to rotate the same
-// refresh cookie against each other (see server/src/services/auth.service.ts's
-// rotateRefreshToken, which invalidates the previous refresh token on each call).
+// This is one shared "refresh in progress" promise, used by every request
+// that hits a 401 error at the same time. Without sharing it, if 5 requests
+// failed at once, each one would separately call /auth/refresh, and they'd
+// end up racing to replace the same refresh cookie (see
+// server/src/services/auth.service.ts's rotateRefreshToken, which
+// invalidates the previous refresh token every time it's called).
 let refreshPromise: Promise<string> | null = null
 
 async function refreshAccessToken(): Promise<string> {
@@ -92,10 +98,12 @@ async function refreshAccessToken(): Promise<string> {
   return refreshPromise
 }
 
-// On a 401 (access token expired/invalid), silently try to refresh it once
-// and replay the original request — this is what lets a user stay logged
-// in across the 15-minute access-token lifetime without ever seeing a
-// re-login prompt, as long as their refresh cookie (7 days) is still valid.
+// When a request comes back with a 401 error (meaning the access token
+// expired or is invalid), this quietly tries to refresh the token once and
+// then replays the original request. This is what keeps a user logged in
+// past the access token's 15-minute lifetime without ever showing them a
+// login prompt again, as long as their refresh cookie (which lasts 7 days)
+// is still valid.
 api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
@@ -120,10 +128,11 @@ api.interceptors.response.use(
   },
 )
 
-// Pulls the human-readable message out of a failed API call — every
-// backend error follows the { success: false, error: { code, message } }
-// shape, so this is the one place that unwraps it instead of every call
-// site reaching into `err.response.data.error.message` by hand.
+// Pulls the human-readable message out of a failed API call. Every backend
+// error follows the { success: false, error: { code, message } } shape, so
+// this is the one place that reads it out, instead of every place that
+// makes an API call having to reach into `err.response.data.error.message`
+// by hand.
 export function getApiErrorMessage(err: unknown): string {
   if (axios.isAxiosError(err)) {
     const data = err.response?.data as ApiError | undefined
