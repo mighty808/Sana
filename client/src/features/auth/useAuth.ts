@@ -1,10 +1,11 @@
 import { useContext } from 'react'
 import { AuthContext } from './AuthContext'
 
-// Thin hook so every screen imports `useAuth()` instead of reaching into
-// `useContext(AuthContext)` + null-checking by hand everywhere — the
-// null-check happens once, here, with a clear error if it's ever used
-// outside <AuthProvider> (a real bug, not something to silently tolerate).
+// A small wrapper hook so every screen can just call `useAuth()` instead of
+// calling `useContext(AuthContext)` and checking for null by hand every
+// time. That null check happens once, here, and throws a clear error if
+// this is ever used outside an <AuthProvider> — that would be a real bug in
+// the code, not something that should fail silently.
 export function useAuth() {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth() must be used inside <AuthProvider>')
