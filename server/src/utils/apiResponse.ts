@@ -14,11 +14,12 @@ export function fail(res: Response, code: string, message: string, status = 400)
   return res.status(status).json({ success: false, error: { code, message } })
 }
 
-// A thrown error that carries an HTTP status and machine-readable code.
-// Service/controller code throws this for expected failure cases (e.g. "not found",
-// "wrong password") and the global error handler middleware turns it into the
-// standard { success: false, error } response automatically — no res.json() needed
-// at the call site.
+// An error object that carries an HTTP status and a machine-readable code
+// along with its message. Service and controller code throws this for
+// expected failure cases (e.g. "not found", "wrong password"). The global
+// error handler middleware catches it and turns it into the standard
+// { success: false, error } response automatically, so the code that throws
+// it doesn't need to call res.json() itself.
 export class AppError extends Error {
   constructor(
     message: string,
@@ -30,25 +31,27 @@ export class AppError extends Error {
   }
 }
 
-// True if `err` is a MongoDB duplicate-key error (code 11000) — thrown when
-// an insert/update violates a `unique: true` schema constraint (e.g. two
-// departments with the same name, two users with the same email). Services
-// that write to a unique field should catch this and re-throw as an
-// AppError(..., 409, '<SOMETHING>_EXISTS') instead of letting the raw driver
-// error reach the client as a generic 500. Shared here so this check is
-// written once instead of duplicated in every service that needs it.
+// Returns true if `err` is a MongoDB duplicate-key error (code 11000).
+// MongoDB throws this when an insert or update would violate a
+// `unique: true` schema constraint (for example, two users with the same
+// email). Services that write to a unique field should catch this and
+// re-throw it as an AppError(..., 409, '<SOMETHING>_EXISTS') instead of
+// letting the raw database error reach the client as a generic 500. This
+// check lives here once so it doesn't need to be rewritten in every service
+// that needs it.
 export function isDuplicateKeyError(err: unknown): boolean {
   return Boolean(err && typeof err === 'object' && 'code' in err && err.code === 11000)
 }
 
-// Throws a clean 400 AppError if `id` isn't a syntactically valid MongoDB
-// ObjectId. Route-level `:id` params are already covered by
+// Throws a clean 400 AppError if `id` isn't validly formatted as a MongoDB
+// ObjectId. Route-level `:id` params are already checked by
 // middleware/validateObjectId.ts, but request BODIES can also contain
-// ObjectId references (e.g. an appointment's `patient`/`doctor`/`department`
-// fields) which Zod's `z.string()` alone doesn't validate as ObjectIds.
-// Without this check, passing garbage like `{ "patient": "not-an-id" }`
-// would reach Mongoose and throw an uncaught CastError (500) instead of a
-// clean, expected 400 — the same class of bug the route-param middleware fixes.
+// ObjectId references (e.g. an appointment's `patient`/`doctor` fields), and
+// Zod's `z.string()` alone doesn't check that a string is a valid ObjectId.
+// Without this check, sending something like `{ "patient": "not-an-id" }`
+// would reach Mongoose and cause an unhandled error (a generic 500) instead
+// of the clean, expected 400 response — the same problem the route-param
+// middleware already fixes for URL params.
 export function assertValidObjectId(id: string, label: string): void {
   if (!isValidObjectId(id)) {
     throw new AppError(`'${label}' is not a valid id`, 400, 'INVALID_ID')
