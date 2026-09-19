@@ -9,34 +9,35 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { formatDateTime } from '@/lib/date'
 
-function formatWhen(iso: string) {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
-}
-
-// The one place every role that holds 'encounter.read' (Admin, Nurse,
-// Doctor) can browse encounters — previously the only way to reach one was
-// the Appointment's reverse-link (see AppointmentsPage's "Open encounter")
-// or a URL relayed out of band. Row click goes to the existing detail
-// workspace at /encounters/:id, unchanged.
+// The one page where every role that holds the 'encounter.read' permission
+// (Admin, Nurse, Doctor) can browse all encounters. Before this page
+// existed, the only ways to reach an individual encounter were the "Open
+// encounter" link on the Appointments page, or someone sharing a URL
+// directly. Clicking a row here goes to the same encounter detail page at
+// /encounters/:id as before.
 export function EncountersListPage() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const [statusFilter, setStatusFilter] = useState<EncounterStatus | 'ALL'>('ALL')
   const { data: encounters, isLoading } = useEncounters(statusFilter === 'ALL' ? undefined : statusFilter)
-  // listEncounters() only scopes the list down for DOCTOR (their own
-  // encounters) — Admin and Nurse both see every encounter, same
-  // distinction already established on the Lab Orders page.
+  // listEncounters() only narrows the list down for a doctor, showing just
+  // their own encounters. Admin and Nurse both see every encounter, the
+  // same distinction already used on the Lab Orders page.
   const seesEveryEncounter = user?.role.name !== 'DOCTOR'
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-slate-600">
           {seesEveryEncounter ? 'Every encounter in the system.' : 'Encounters you\'re running.'}
         </p>
         <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as EncounterStatus | 'ALL')}>
-          <SelectTrigger size="sm" className="w-40">
+          {/* No visible <label> here, so without aria-label a screen reader
+              announces an unnamed combobox — the selected value on its own
+              doesn't say what the control filters. */}
+          <SelectTrigger size="sm" className="w-40" aria-label="Filter by status">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -54,19 +55,18 @@ export function EncountersListPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50 hover:bg-slate-50">
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Patient</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Doctor</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Department</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Chief complaint</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Started</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Status</TableHead>
+              <TableHead>Patient</TableHead>
+              <TableHead>Doctor</TableHead>
+              <TableHead>Chief complaint</TableHead>
+              <TableHead>Started</TableHead>
+              <TableHead>Status</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading &&
               Array.from({ length: 6 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: 6 }).map((__, j) => (
+                  {Array.from({ length: 5 }).map((__, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-24" />
                     </TableCell>
@@ -95,9 +95,8 @@ export function EncountersListPage() {
                   <TableCell className="text-slate-700">
                     Dr. {enc.doctor.firstName} {enc.doctor.lastName}
                   </TableCell>
-                  <TableCell className="text-slate-700">{enc.department.name}</TableCell>
                   <TableCell className="max-w-xs truncate text-slate-700">{enc.chiefComplaint}</TableCell>
-                  <TableCell className="text-xs text-slate-500">{formatWhen(enc.startedAt)}</TableCell>
+                  <TableCell className="text-xs text-slate-600">{formatDateTime(enc.startedAt)}</TableCell>
                   <TableCell>
                     <StatusBadge status={enc.status} />
                   </TableCell>
