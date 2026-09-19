@@ -8,16 +8,17 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
-
-function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
-}
+import { formatShortDate } from '@/lib/date'
 
 export function LabResultsPage() {
-  const { hasPermission } = useAuth()
+  const { user, hasPermission } = useAuth()
   const { data: results, isLoading } = useLabResults()
   const releaseResult = useReleaseLabResult()
   const canRelease = hasPermission('labresult.release')
+  // A Patient's own results are obviously all theirs — no column needed.
+  // Everyone else (Admin/Doctor/Lab Tech) can see multiple patients' results
+  // in this same list, so the patient needs to be identified per row.
+  const showPatientColumn = user?.role.name !== 'PATIENT'
 
   async function handleRelease(id: string, testName: string) {
     try {
@@ -30,13 +31,7 @@ export function LabResultsPage() {
 
   return (
     <div className="space-y-4">
-      {/* Note: the API doesn't populate a patient name or lab order number
-          onto results (see labResult.service.ts's listLabResults — it's a
-          raw find() with no .populate()), so this list is scoped by role
-          (a Doctor only ever sees their own orders' results, a Patient only
-          their own released ones) rather than showing whose result each
-          row belongs to by name. */}
-      <p className="text-sm text-slate-500">
+      <p className="text-sm text-slate-600">
         {canRelease
           ? 'Every result — release one to make it visible to the patient.'
           : 'Results for your orders.'}
@@ -46,14 +41,17 @@ export function LabResultsPage() {
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50 hover:bg-slate-50">
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Test</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Result</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Reference range</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Interpretation</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Resulted</TableHead>
-              <TableHead className="text-xs font-medium tracking-wider text-slate-500 uppercase">Status</TableHead>
+              {showPatientColumn && (
+                <TableHead>Patient</TableHead>
+              )}
+              <TableHead>Test</TableHead>
+              <TableHead>Result</TableHead>
+              <TableHead>Reference range</TableHead>
+              <TableHead>Interpretation</TableHead>
+              <TableHead>Resulted</TableHead>
+              <TableHead>Status</TableHead>
               {canRelease && (
-                <TableHead className="text-right text-xs font-medium tracking-wider text-slate-500 uppercase">
+                <TableHead className="text-right">
                   Actions
                 </TableHead>
               )}
@@ -63,7 +61,7 @@ export function LabResultsPage() {
             {isLoading &&
               Array.from({ length: 5 }).map((_, i) => (
                 <TableRow key={i}>
-                  {Array.from({ length: canRelease ? 7 : 6 }).map((__, j) => (
+                  {Array.from({ length: 6 + (canRelease ? 1 : 0) + (showPatientColumn ? 1 : 0) }).map((__, j) => (
                     <TableCell key={j}>
                       <Skeleton className="h-4 w-20" />
                     </TableCell>
@@ -74,16 +72,29 @@ export function LabResultsPage() {
             {!isLoading &&
               results?.map((result) => (
                 <TableRow key={result._id}>
+                  {showPatientColumn && (
+                    <TableCell className="text-slate-700">
+                      {/* The type says `patient` is always populated (see
+                          types/labResult.ts), but that's a populate-time
+                          contract, not a runtime guarantee — an orphaned
+                          reference would come back null and crash this
+                          whole table for every row, not just its own, so
+                          this stays defensive the same way
+                          labResult.service.ts's releaseLabResult guards
+                          the identical populate('patient') server-side. */}
+                      {result.patient ? `${result.patient.firstName} ${result.patient.lastName}` : '—'}
+                    </TableCell>
+                  )}
                   <TableCell className="font-medium text-slate-900">{result.testName}</TableCell>
                   <TableCell className="tabular-nums text-slate-700">
                     {result.resultValue}
                     {result.unit ? ` ${result.unit}` : ''}
                   </TableCell>
-                  <TableCell className="text-slate-500">{result.referenceRange || '—'}</TableCell>
+                  <TableCell className="text-slate-600">{result.referenceRange || '—'}</TableCell>
                   <TableCell>
                     {result.interpretation ? <StatusBadge status={result.interpretation} /> : '—'}
                   </TableCell>
-                  <TableCell className="text-slate-700">{formatDate(result.resultedAt)}</TableCell>
+                  <TableCell className="text-slate-700">{formatShortDate(result.resultedAt)}</TableCell>
                   <TableCell>
                     <StatusBadge status={result.status} />
                   </TableCell>
