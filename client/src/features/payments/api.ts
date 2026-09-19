@@ -9,10 +9,10 @@ export interface PaymentInput {
   reference?: string
 }
 
-// Recording a payment updates the invoice's own amountPaid/balance/status
-// server-side (one atomic transaction — see payment.service.ts), so both
-// the invoice detail cache and the invoices list need invalidating, not
-// just... there being no separate "payments" list endpoint to invalidate.
+// Recording a payment also updates the invoice's own amount-paid, balance, and
+// status on the server as one combined operation (see payment.service.ts), so
+// both the invoice detail data and the invoices list need to be refreshed
+// afterward. There's no separate "payments" list to refresh, since one doesn't exist.
 export function useCreatePayment() {
   const queryClient = useQueryClient()
   return useMutation({
