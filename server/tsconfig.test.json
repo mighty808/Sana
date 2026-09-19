@@ -1,0 +1,16 @@
+{
+  // Extends the app's real tsconfig rather than duplicating it, so test
+  // files are checked under the same strictness/module settings as the
+  // code they test. This exists only to type-check test files (run it via
+  // `npx tsc -p tsconfig.test.json --noEmit`) — it is NOT what actually
+  // runs the tests. Jest itself uses @swc/jest (see jest.config.js), which
+  // only strips types and does no type-checking of its own; this config is
+  // what gives that back, as a separate, explicit step.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["jest", "node"],
+    "noEmit": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"]
+}
