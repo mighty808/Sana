@@ -8,3 +8,10 @@ export const createLabOrderSchema = z.object({
   priority: z.enum(LAB_ORDER_PRIORITIES).optional(),
   clinicalNotes: z.string().trim().optional(),
 })
+
+// Validates PATCH /lab-orders/:id request bodies, using the same shape as
+// create. This can only be reached while the order is still ORDERED (see
+// labOrder.service.ts's updateLabOrder). Because of that, `tests` here always
+// fully replaces the existing list of tests rather than patching individual
+// entries.
+export const updateLabOrderSchema = createLabOrderSchema.omit({ encounter: true })
