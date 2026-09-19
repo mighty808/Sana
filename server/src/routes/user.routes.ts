@@ -51,7 +51,7 @@ router.get('/me', auth, ctrl.me)
  *               firstName: { type: string }
  *               lastName: { type: string }
  *               phone: { type: string }
- *               role: { type: string, enum: [ADMIN, DOCTOR, NURSE, PATIENT] }
+ *               role: { type: string, enum: [ADMIN, DOCTOR, NURSE, PATIENT, LAB_TECH] }
  *     responses:
  *       201:
  *         description: Created user's public profile.
@@ -63,5 +63,20 @@ router.get('/', auth, requirePermission('user.manage'), ctrl.list)
 
 // ...or create new ones. Body is Zod-validated before reaching the controller.
 router.post('/', auth, requirePermission('user.manage'), validate(createUserSchema), ctrl.create)
+
+/**
+ * @openapi
+ * /users/doctors:
+ *   get:
+ *     summary: List active doctor accounts (for the appointment-booking picker)
+ *     tags: [Users]
+ *     description: >
+ *       Requires 'user.readDoctors' (Nurse only) — a narrower lookup than
+ *       GET /users, which stays Admin-only.
+ *     responses:
+ *       200:
+ *         description: List of public doctor profiles.
+ */
+router.get('/doctors', auth, requirePermission('user.readDoctors'), ctrl.listDoctors)
 
 export default router
