@@ -13,8 +13,9 @@ export interface LabResultInput {
   notes?: string
 }
 
-// GET /lab-results — role-scoped server-side (Admin: all, Doctor: results
-// for orders they placed, Patient: only their own RELEASED results).
+// GET /lab-results — the backend already limits what comes back based on the
+// user's role: an Admin gets all results, a Doctor gets results for orders they
+// placed, and a Patient only gets their own results that have been released.
 export function useLabResults() {
   return useQuery({
     queryKey: ['lab-results'],
@@ -25,9 +26,9 @@ export function useLabResults() {
   })
 }
 
-// Entering a result also flips the parent lab order's test-item status
-// (and possibly its overall status) server-side, so both caches need
-// invalidating, not just lab-results.
+// Entering a result also changes the status of that test on the parent lab order
+// on the server (and possibly the order's overall status too), so both the
+// lab-results and lab-orders data need to be refreshed, not just lab-results.
 export function useCreateLabResult() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -49,6 +50,12 @@ export function useReleaseLabResult() {
       const res = await api.patch<ApiSuccess<LabResult>>(`/lab-results/${id}/release`)
       return res.data.data
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lab-results'], exact: false }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-results'], exact: false })
+      // The lab order detail dialog (LabOrdersPage) also shows each result's
+      // status, fetched via useLabOrder, so that data needs to reflect the new
+      // RELEASED status too, not just the standalone results list.
+      queryClient.invalidateQueries({ queryKey: ['lab-orders'], exact: false })
+    },
   })
 }
