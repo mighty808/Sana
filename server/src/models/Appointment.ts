@@ -1,9 +1,10 @@
 import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mongoose'
 
-// The lifecycle an appointment moves through. BOOKED is the starting state
-// (Admin/receptionist scheduled it); CONFIRMED/CHECKED_IN/IN_PROGRESS track
-// the patient actually arriving and being seen; COMPLETED/CANCELLED/NO_SHOW
-// are the three terminal states. See blueprint section 5.1 for this exact list.
+// The stages an appointment moves through. BOOKED is the starting state,
+// set as soon as it's scheduled. CONFIRMED, CHECKED_IN, and IN_PROGRESS
+// track the patient actually arriving and being seen. COMPLETED,
+// CANCELLED, and NO_SHOW are the three end states — nothing changes after
+// an appointment reaches one of those three.
 export const APPOINTMENT_STATUSES = [
   'BOOKED',
   'CONFIRMED',
@@ -24,7 +25,6 @@ const appointmentSchema = new Schema(
     appointmentNumber: { type: String, required: true, unique: true },
     patient: { type: Schema.Types.ObjectId, ref: 'Patient', required: true },
     doctor: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-    department: { type: Schema.Types.ObjectId, ref: 'Department', required: true },
     // The calendar day of the appointment (time-of-day lives in startTime/endTime
     // below, as plain "HH:MM" strings — simpler than juggling timezones across
     // two separate Date fields for what's really just a wall-clock time slot).
@@ -33,6 +33,13 @@ const appointmentSchema = new Schema(
     endTime: { type: String, required: true }, // "HH:MM", 24-hour
     reason: { type: String, trim: true },
     status: { type: String, enum: APPOINTMENT_STATUSES, default: 'BOOKED' },
+    // Points back at the Encounter a nurse opened for this appointment at
+    // check-in (see encounter.service.ts's createEncounter, which sets
+    // this field once, when the encounter is created). This is what lets
+    // the "Open encounter" button on an appointment jump straight to the
+    // encounter the nurse already started, instead of the doctor having
+    // to go find it in the separate list of all encounters.
+    encounter: { type: Schema.Types.ObjectId, ref: 'Encounter' },
   },
   { timestamps: true },
 )
