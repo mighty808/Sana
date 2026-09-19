@@ -13,10 +13,10 @@ export interface LabTestItem {
   status: 'PENDING' | 'COMPLETED'
 }
 
-// Unlike Appointment/Encounter, listLabOrders() and getLabOrderById() both
-// ALWAYS populate patient (full) and doctor (PUBLIC_USER_FIELDS) the same
-// way regardless of the caller's role — no role-dependent partial
-// population here, so these are never raw id strings.
+// Unlike Appointment and Encounter, listLabOrders() and getLabOrderById()
+// always fill in the full patient object and the doctor's public fields,
+// no matter what role is calling. There's no case here where these come
+// back as raw id strings.
 export interface LabOrder {
   _id: string
   labOrderNumber: string
@@ -30,7 +30,7 @@ export interface LabOrder {
   orderedAt: string
 }
 
-// GET /lab-orders/:id's response shape.
+// This is the response shape of GET /lab-orders/:id.
 export interface LabOrderDetail {
   order: LabOrder
   results: LabResult[]
