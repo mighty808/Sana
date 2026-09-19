@@ -1,7 +1,8 @@
-// GET /analytics/dashboard returns a different shape per role (see
-// analytics.service.ts's getDashboard switch) — modeled as a discriminated
-// union on `role` so each render branch gets full type-safety on exactly
-// the fields that role's response actually has.
+// GET /analytics/dashboard returns different fields depending on the user's
+// role (see analytics.service.ts's getDashboard switch). This type is
+// modeled as a union that switches on the `role` field, so that TypeScript
+// can check, for each role, exactly the fields that role's response
+// actually includes.
 export type DashboardSummary =
   | {
       role: 'ADMIN'
@@ -20,10 +21,10 @@ export type DashboardSummary =
       aiConsultationsUnreviewed: number
     }
   | {
-      // Per Sana_Workflow_Prompt.md's role realignment (2026-08-11): Nurse
-      // is the front-line operator — registration, check-in, and the
-      // mandatory vitals gate — so the dashboard tracks exactly those 3
-      // things now (see analytics.service.ts's getNurseDashboard).
+      // The Nurse is the front-line operator, handling registration,
+      // check-in, and the mandatory vitals step, so the dashboard tracks
+      // exactly those 3 things (see analytics.service.ts's
+      // getNurseDashboard).
       role: 'NURSE'
       patientsRegisteredToday: number
       appointmentsCheckedInToday: number
@@ -41,4 +42,12 @@ export type DashboardSummary =
       inProgressOrders: number
       completedToday: number
       releasedToday: number
+    }
+  | {
+      // The Pharmacist dashboard: same two-stat shape as Lab Tech's
+      // "pending queue" + "done by me today," just for the pharmacy
+      // workflow (see analytics.service.ts's getPharmacistDashboard).
+      role: 'PHARMACIST'
+      pendingPrescriptions: number
+      dispensedToday: number
     }
