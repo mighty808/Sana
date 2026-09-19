@@ -1,7 +1,7 @@
-// `user` is populated with PUBLIC_USER_FIELDS ('firstName lastName email')
-// but genuinely optional — failed-login attempts are logged with no known
-// user (see models/AuditLog.ts's comment), so this must stay nullable
-// rather than assumed-present.
+// `user` is filled in with PUBLIC_USER_FIELDS ('firstName lastName email'),
+// but it's genuinely optional: failed-login attempts get logged even when
+// there's no known user (see models/AuditLog.ts's comment), so this field
+// has to allow being empty rather than always being assumed present.
 export interface AuditLogUserRef {
   _id: string
   firstName: string
