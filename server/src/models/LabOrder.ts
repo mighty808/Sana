@@ -3,13 +3,11 @@ import { Schema, model, type InferSchemaType, type HydratedDocument } from 'mong
 // A LabOrder moves through this lifecycle as its individual tests get
 // results entered against them:
 //   ORDERED    -> just created, no results entered yet
-//   PROCESSING -> at least one (but not all) of its tests has a result
+//   PROCESSING -> at least one test has a result, but not all of them
 //   COMPLETED  -> every test in the order has a result entered
-//   REVIEWED   -> the ordering doctor has reviewed the completed results
-// Nothing in this phase's endpoints transitions an order to REVIEWED yet —
-// there's no "mark reviewed" action in the blueprint's REST table for lab
-// orders, so that transition is left for a later phase (e.g. the doctor
-// dashboard) to add, rather than inventing an endpoint not actually asked for.
+//   REVIEWED   -> the ordering doctor has looked over the completed results
+// There's no endpoint yet that actually moves an order into REVIEWED —
+// that's left for later, rather than adding an action nothing calls yet.
 export const LAB_ORDER_STATUSES = ['ORDERED', 'PROCESSING', 'COMPLETED', 'REVIEWED'] as const
 export type LabOrderStatus = (typeof LAB_ORDER_STATUSES)[number]
 
@@ -17,10 +15,10 @@ export const LAB_ORDER_PRIORITIES = ['ROUTINE', 'URGENT'] as const
 export type LabOrderPriority = (typeof LAB_ORDER_PRIORITIES)[number]
 
 // One test requested within an order, e.g. { testName: 'Sputum smear', status: 'PENDING' }.
-// Kept as an embedded subdocument array (not a separate collection) since
-// these entries are small, always accessed together with their parent
-// order, and never queried independently — same reasoning as
-// emergencyContact on Patient (see models/Patient.ts).
+// These live directly inside the order document, not as their own
+// collection — they're small, always read together with their order, and
+// never looked up on their own, the same reasoning as emergencyContact on
+// Patient (see models/Patient.ts).
 const testItemSchema = new Schema(
   {
     testName: { type: String, required: true, trim: true },
