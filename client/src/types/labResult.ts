@@ -4,15 +4,16 @@ export type LabResultStatus = (typeof LAB_RESULT_STATUSES)[number]
 export const LAB_RESULT_INTERPRETATIONS = ['NORMAL', 'ABNORMAL', 'CRITICAL'] as const
 export type LabResultInterpretation = (typeof LAB_RESULT_INTERPRETATIONS)[number]
 
-// listLabResults() returns raw LabResult documents with no .populate() at
-// all (see labResult.service.ts) — `patient`/`labOrder`/`performedBy` are
-// always plain id strings here, never populated objects, unlike LabOrder's
-// own patient/doctor fields. There's genuinely no patient name available
-// on this list without a separate lookup the backend doesn't offer.
+import type { Patient } from './patient'
+
+// listLabResults() fills in `patient` (see labResult.service.ts), the same
+// way LabOrder's own patient field always is. `labOrder` and `performedBy`
+// stay as plain id strings, because nothing that uses this list needs them
+// filled in.
 export interface LabResult {
   _id: string
   labOrder: string
-  patient: string
+  patient: Patient
   performedBy: string
   testName: string
   resultValue: string
