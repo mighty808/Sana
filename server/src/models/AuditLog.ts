@@ -1,9 +1,9 @@
 import { Schema, model, type InferSchemaType } from 'mongoose'
 
-// One document per sensitive action taken in the system (login, password reset,
-// user creation, etc — more actions get logged as later phases add them).
-// Read-only from the app's perspective once written; viewed via the admin
-// audit-log dashboard built in Phase 9.
+// One document per sensitive action taken in the system — login, password
+// reset, user creation, and more as new actions get logged over time.
+// Once written, these are never changed by the app, only read — they're
+// viewed through the admin's audit-log dashboard.
 const auditLogSchema = new Schema(
   {
     // Who performed the action. Optional because failed-login attempts (where
