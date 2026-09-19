@@ -2,25 +2,29 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ApiSuccess } from '@/lib/api'
 import type { Invoice, InvoiceDetail } from '@/types/invoice'
 
-// Mirrors server/src/schemas/invoice.ts's createInvoiceSchema — `amount`
-// per item is deliberately not sent, the backend always computes it as
-// qty * unitPrice itself.
+// This matches the shape expected by server/src/schemas/invoice.ts's createInvoiceSchema.
+// We don't send an `amount` for each item. The backend always works it out itself
+// as qty * unitPrice, so there's no need to calculate it here.
 export interface InvoiceItemInput {
   description: string
   qty: number
   unitPrice: number
 }
 
+// Exactly one of `labOrder`/`prescription` must be given — matches
+// schemas/invoice.ts's createInvoiceSchema refine on the server.
 export interface InvoiceInput {
-  encounter: string
+  labOrder?: string
+  prescription?: string
   items: InvoiceItemInput[]
 }
 
-// GET /invoices?page=&limit= — unlike patients/appointments, this endpoint
-// returns a PLAIN array with no {total, pages} metadata at all (see
-// invoice.service.ts's listInvoices — both branches just return an array).
-// The page component treats "fewer rows than `limit` came back" as "this is
-// the last page" rather than relying on a total count the API doesn't give.
+// GET /invoices?page=&limit= — unlike the patients and appointments endpoints,
+// this one just returns a plain array of invoices, with no total count or page
+// count included (see invoice.service.ts's listInvoices, which always returns a
+// plain array). Because there's no total count to check against, the page
+// component instead figures out it has reached the last page whenever fewer
+// rows come back than the requested `limit`.
 export function useInvoices(page: number, limit: number) {
   return useQuery({
     queryKey: ['invoices', { page, limit }],
@@ -29,6 +33,34 @@ export function useInvoices(page: number, limit: number) {
       return res.data.data
     },
     placeholderData: (prev) => prev,
+  })
+}
+
+// GET /invoices?labOrder= — returns the invoice for that lab order, or null if
+// one hasn't been created yet. This is used in the Lab Order detail dialog
+// (features/labOrders/LabOrdersPage.tsx) both to show a payment-status badge
+// and to decide whether the "Bill this order" button should be shown.
+export function useInvoiceForLabOrder(labOrderId: string | undefined) {
+  return useQuery({
+    queryKey: ['invoices', 'labOrder', labOrderId],
+    queryFn: async () => {
+      const res = await api.get<ApiSuccess<Invoice | null>>('/invoices', { params: { labOrder: labOrderId } })
+      return res.data.data
+    },
+    enabled: Boolean(labOrderId),
+  })
+}
+
+// GET /invoices?prescription= — same idea as useInvoiceForLabOrder above,
+// for the Prescriptions queue's "Bill this prescription" button.
+export function useInvoiceForPrescription(prescriptionId: string | undefined) {
+  return useQuery({
+    queryKey: ['invoices', 'prescription', prescriptionId],
+    queryFn: async () => {
+      const res = await api.get<ApiSuccess<Invoice | null>>('/invoices', { params: { prescription: prescriptionId } })
+      return res.data.data
+    },
+    enabled: Boolean(prescriptionId),
   })
 }
 
