@@ -11,15 +11,23 @@ export interface InvoiceItem {
   amount: number
 }
 
-// `patient` is populated on Admin's list (listInvoices) and on
-// getInvoiceById for every role, but NOT on a Patient's own list (no
-// .populate() there — see invoice.service.ts — since it's implicitly
-// their own). Matches the same populated-or-string pattern as Appointment.
+// `patient` is filled in on the Admin's list (listInvoices) and on
+// getInvoiceById for every role, but not on a Patient's own list — there's
+// no .populate() call there (see invoice.service.ts), since it's obviously
+// their own record anyway. This follows the same "either the full object
+// or just the id string" pattern as Appointment. There's one invoice per
+// `labOrder` or `prescription` (exactly one of the two is ever set, never
+// both — see invoice.service.ts's createInvoice), not per `encounter` — an
+// encounter with several lab orders/prescriptions gets billed separately
+// for each one. `encounter` is kept here too as a convenience field, but
+// it isn't what invoices are actually organized by.
 export interface Invoice {
   _id: string
   invoiceNumber: string
   patient: Patient | string
   encounter: string
+  labOrder?: string
+  prescription?: string
   items: InvoiceItem[]
   subtotal: number
   total: number
