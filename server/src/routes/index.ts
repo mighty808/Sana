@@ -12,6 +12,8 @@ import paymentRoutes from './payment.routes.js'
 import aiRoutes from './ai.routes.js'
 import analyticsRoutes from './analytics.routes.js'
 import auditLogRoutes from './auditLog.routes.js'
+import referralRoutes from './referral.routes.js'
+import prescriptionRoutes from './prescription.routes.js'
 
 // This is the single top-level router for the whole API. app.ts mounts it
 // at /api/v1, so every path below becomes /api/v1/<path>. Each feature module
@@ -38,5 +40,7 @@ router.use('/payments', paymentRoutes)
 router.use('/ai', aiRoutes)
 router.use('/analytics', analyticsRoutes)
 router.use('/audit-logs', auditLogRoutes)
+router.use('/referrals', referralRoutes)
+router.use('/prescriptions', prescriptionRoutes)
 
 export default router
