@@ -9,6 +9,13 @@ export async function list(req: Request, res: Response) {
   return ok(res, notifications)
 }
 
+// GET /notifications/all — requires 'notification.readAll' (Admin only).
+// Every notification sent to every user, for oversight.
+export async function listAll(_req: Request, res: Response) {
+  const notifications = await notificationService.listAllNotifications()
+  return ok(res, notifications)
+}
+
 // PATCH /notifications/:id/read — requires 'notification.read'.
 export async function markAsRead(req: Request, res: Response) {
   const notification = await notificationService.markAsRead(req.params.id as string, req.user!.id)
