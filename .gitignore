@@ -60,3 +60,9 @@ PROJECT_BRIEF.md
 # Generated API contract artifact. Reproduced from the Pydantic models when
 # needed rather than tracked.
 contract/
+
+# Any local backup or variant of an env file — .env.bak, .env.local.old and
+# friends. The plain `.env` patterns above do not match a suffixed copy, and a
+# backup holds exactly the same secrets as the original.
+.env.*
+!.env.example
