@@ -67,6 +67,14 @@ export function getIO(): Server {
   return io
 }
 
+// Whether a Socket.IO server exists to emit through. Callers that merely want
+// to push a live hint use this to skip the work entirely, rather than calling
+// getIO() and treating the throw as control flow — an absent server is an
+// ordinary condition here, not an error.
+export function isSocketReady(): boolean {
+  return io !== null && io !== undefined
+}
+
 // Debounces broadcastWardBoardChanged calls below into one emit per short
 // window, instead of one per write. On a busy ward, several vitals/
 // diagnosis/acuity writes can land within milliseconds of each other across
@@ -102,11 +110,28 @@ function flushWardBoardBroadcast() {
 // break the request that triggered it (vitals/diagnosis/acuity/completion
 // all still need to succeed either way).
 export function broadcastWardBoardChanged(encounterId: string) {
+  // No Socket.IO means no server is running, so there is nobody to tell.
+  // Returning here rather than scheduling a timer that will fail 400ms later
+  // is both cheaper and quieter — and it is what keeps the Jest suite green:
+  // the services under test call this freely, the debounce timer outlived the
+  // test file that triggered it, and the resulting `logger.error` landed after
+  // teardown. Jest reports that as "Cannot log after tests are done" and exits
+  // non-zero even when every test passed, which is exactly what it did in CI:
+  // 279 passed, 25 suites green, process exit 1.
+  //
+  // This is not a test-only accommodation. "Not initialized" is a normal state
+  // outside a live server (scripts, seeds, one-off jobs), and none of those
+  // want an error logged for a broadcast nobody was waiting for.
+  if (!isSocketReady()) return
+
   try {
     if (!pendingWardBoardEncounterIds) pendingWardBoardEncounterIds = new Set()
     pendingWardBoardEncounterIds.add(encounterId)
     if (!wardBoardDebounceTimer) {
       wardBoardDebounceTimer = setTimeout(flushWardBoardBroadcast, WARD_BOARD_DEBOUNCE_MS)
+      // Don't let a pending broadcast hold the event loop open — a debounced
+      // "go refresh" hint is never a reason to delay a process shutting down.
+      wardBoardDebounceTimer.unref?.()
     }
   } catch (err) {
     logger.error('Failed to schedule ward-board.changed broadcast', err)
