@@ -7,12 +7,27 @@
 // connection.
 import { MongoMemoryReplSet } from 'mongodb-memory-server'
 
+import { INSTANCE_LAUNCH_TIMEOUT_MS } from './setupTestDb.js'
+
 // A single-node replica set, not the plain standalone server setupTestDb.ts
 // otherwise defaults to — needed because payment.service.ts's
 // recordPayment runs inside a real MongoDB transaction, which a standalone
 // mongod rejects outright.
 async function main() {
-  const replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } })
+  // launchTimeout for the same reason setupTestDb.ts passes it: the library's
+  // 10-second default is not a realistic budget for starting a mongod. That
+  // default already cost 46 failing Jest tests once, and the gap is wider
+  // here — on a cold CI runner the binary is downloaded and extracted before
+  // anything starts, and then the replica set still has to initiate and
+  // finish an election before it will accept a write.
+  //
+  // The constant is imported rather than redeclared so the two paths that
+  // boot a test database cannot drift to different budgets; this file was
+  // missed when setupTestDb.ts was fixed precisely because they are separate.
+  const replSet = await MongoMemoryReplSet.create({
+    replSet: { count: 1 },
+    instanceOpts: [{ launchTimeout: INSTANCE_LAUNCH_TIMEOUT_MS }],
+  })
 
   // Every other module below reads MONGO_URI at import time (see
   // config/env.ts's top-level `required()` calls), so this has to be set
