@@ -14,7 +14,12 @@ let mongod: MongoMemoryServer | undefined
 // library must not give up first. The failure signatures differ — Jest reports
 // "Exceeded timeout of Nms for a hook", the library reports
 // "GenericMMSError: Instance failed to start within Nms".
-const INSTANCE_LAUNCH_TIMEOUT_MS = 60_000
+// Exported because test/e2eServer.ts boots its own replica set for the
+// Playwright harness and needs the same budget. Keeping one constant means
+// the two cannot drift apart — e2eServer.ts was left on the library's
+// 10-second default when this was first raised, precisely because they are
+// separate files.
+export const INSTANCE_LAUNCH_TIMEOUT_MS = 60_000
 
 // Starts a fresh, throwaway in-memory MongoDB and points Mongoose at it.
 // Call once from a `beforeAll` in any test suite that touches models.
