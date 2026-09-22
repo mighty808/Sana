@@ -1,6 +1,6 @@
 # Sana
 
-An event-driven hospital management system with a retrieval-grounded AI
+A hospital management system with a retrieval-grounded AI
 diagnostic decision-support agent.
 
 Final-year project — Paakwesi Effah Aboagye, BSc Computer Science, University
