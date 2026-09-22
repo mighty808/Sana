@@ -116,7 +116,16 @@ export default defineConfig({
       cwd: '../server',
       url: `${E2E_API_ORIGIN}/api/v1/health`,
       reuseExistingServer: false,
-      timeout: 60_000,
+      // Generous on CI, because this server does far more before answering
+      // its health check than "start Express": it spawns an in-memory MongoDB
+      // replica set, waits out the node's election, connects Mongoose, and
+      // seeds roles, six accounts and five patients. On a cold runner the
+      // mongod binary is downloaded and extracted first as well.
+      //
+      // Local machines have the binary cached and warm page cache, so 60s is
+      // ample there and worth keeping — a dev server that genuinely hangs
+      // should fail fast rather than after three minutes.
+      timeout: process.env.CI ? 180_000 : 60_000,
       env: {
         PORT: String(E2E_API_PORT),
         // Socket.IO validates the handshake's Origin against this (see
@@ -129,7 +138,9 @@ export default defineConfig({
       cwd: '.',
       url: E2E_CLIENT_ORIGIN,
       reuseExistingServer: false,
-      timeout: 30_000,
+      // Vite starts quickly, but on a CI runner it is competing with the API
+      // server's mongod download for the same cold machine.
+      timeout: process.env.CI ? 90_000 : 30_000,
       env: {
         E2E_CLIENT_PORT: String(E2E_CLIENT_PORT),
         E2E_API_TARGET: E2E_API_ORIGIN,
