@@ -14,8 +14,10 @@ export interface FakeConsultResponse {
   acuityReasons?: string[]
 }
 
-// Exported so src/test/ai-contract.test.ts can assert this is a shape the real
-// FastAPI service could actually have produced.
+// Exported so a test can assert this is a shape the real FastAPI service could
+// actually have produced. Nothing asserts that automatically any more -- the
+// contract test that did was removed along with the schema it checked -- so
+// keeping this realistic is now a matter of care rather than enforcement.
 //
 // `sources` is here rather than omitted because the real service ALWAYS sends
 // it — it's required on the Pydantic model, and the pipeline returns every
