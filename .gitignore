@@ -56,3 +56,7 @@ TEST_LOGINS.md
 # Working notes about the project rather than part of it. Kept locally; nothing
 # in the codebase reads it.
 PROJECT_BRIEF.md
+
+# Generated API contract artifact. Reproduced from the Pydantic models when
+# needed rather than tracked.
+contract/
