@@ -41,8 +41,10 @@ async function main() {
       // Shaped like a real response, not a minimal one. `sources` and
       // `ragMetadata` are here because the real service always sends them
       // (sources is required on the Pydantic model), and a stub that omits
-      // them lets a spec pass against a response the service cannot produce —
-      // which is exactly what src/test/ai-contract.test.ts now checks for.
+      // them lets a spec pass against a response the service cannot produce.
+      // That mismatch was found by a contract test that has since been
+      // removed, so nothing catches it automatically now — if the Python
+      // response shape changes, this stub has to be updated by hand.
       // Two sources either side of the relevance threshold so the e2e suite
       // renders both the grounded and the "not used" chip.
       return new Response(
