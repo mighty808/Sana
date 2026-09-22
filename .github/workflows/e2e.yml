@@ -86,6 +86,21 @@ jobs:
         working-directory: client
         run: npx playwright install --with-deps chromium
 
+      # Both the Jest suite and the Playwright harness start an in-memory
+      # MongoDB, and mongodb-memory-server downloads the mongod binary
+      # (~100MB) the first time it needs it. Without this cache every run pays
+      # that download twice over, and a mongodb.com hiccup fails a build for
+      # reasons that have nothing to do with the commit.
+      #
+      # It also directly buys back startup time: Playwright's webServer gives
+      # up on the whole run if the API server's health check goes unanswered,
+      # and on a cold runner the download is the largest part of that wait.
+      - name: Cache the mongod binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}
+
       # Type safety for both halves. The backend Jest suite is a separate
       # concern from this workflow's e2e focus, but the type check is cheap
       # and catches a broken refactor before the slow browser run starts.
