@@ -1221,8 +1221,18 @@ export function EncounterPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr]">
-        {/* ---------- Left column: complaint, history, diagnoses ---------- */}
+      {/* Three columns grouped by kind of content rather than by
+          chronology — chronology still drives the order of cards *within*
+          a column, but which column a card lives in is about what it is
+          (assessment vs. an order/plan vs. live data). Column C spans the
+          full width at the `lg` stage rather than becoming a cramped third
+          column, because Vitals' own 4-up stat grid needs more room than a
+          three-way split leaves at that width — it only becomes a true
+          third column once `xl` gives the page's max-w-7xl container
+          somewhere to put it. */}
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr] xl:grid-cols-[1.2fr_1fr_1fr]">
+        {/* ---------- Column A: assessment — the clinical story, what's
+             wrong and why. ---------- */}
         <div className="space-y-5">
           <Card>
             <CardHeader>
@@ -1288,6 +1298,42 @@ export function EncounterPage() {
               }
             />
           )}
+        </div>
+
+        {/* ---------- Column B: orders & plan — things the doctor orders
+             or prescribes, in the order they'd typically happen: workup,
+             then treatment, then referral only if one turns out to be
+             needed. ---------- */}
+        <div className="space-y-5">
+          {hasPermission('laborder.read') && <LabOrdersCard encounterId={encounter._id} encounterStatus={encounter.status} />}
+
+          {/* Same client-side ownership gating as the Referrals card below —
+              only the assigned doctor gets the write form, but anyone who
+              can open the encounter sees what's already been prescribed. */}
+          {(hasPermission('prescription.create') || prescriptions.length > 0) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Pill className="size-4 text-blue-600" /> Prescriptions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {prescriptions.length === 0 ? (
+                  <p className="text-sm text-slate-600">No prescriptions on this encounter.</p>
+                ) : (
+                  <PrescriptionsList prescriptions={prescriptions} />
+                )}
+
+                {hasPermission('prescription.create') &&
+                  encounter.status === 'IN_PROGRESS' &&
+                  user?.id === encounter.doctor._id && (
+                    <div className="border-t border-border pt-4">
+                      <PrescribeForm encounterId={encounter._id} hasExistingPrescriptions={prescriptions.length > 0} />
+                    </div>
+                  )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Referring is restricted to the assigned doctor client-side too
               (unlike AddDiagnosisForm above), since only they can actually
@@ -1317,42 +1363,14 @@ export function EncounterPage() {
               </CardContent>
             </Card>
           )}
-
-          {/* Same client-side ownership gating as the Referrals card above —
-              only the assigned doctor gets the write form, but anyone who
-              can open the encounter sees what's already been prescribed. */}
-          {(hasPermission('prescription.create') || prescriptions.length > 0) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Pill className="size-4 text-blue-600" /> Prescriptions
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {prescriptions.length === 0 ? (
-                  <p className="text-sm text-slate-600">No prescriptions on this encounter.</p>
-                ) : (
-                  <PrescriptionsList prescriptions={prescriptions} />
-                )}
-
-                {hasPermission('prescription.create') &&
-                  encounter.status === 'IN_PROGRESS' &&
-                  user?.id === encounter.doctor._id && (
-                    <div className="border-t border-border pt-4">
-                      <PrescribeForm encounterId={encounter._id} hasExistingPrescriptions={prescriptions.length > 0} />
-                    </div>
-                  )}
-              </CardContent>
-            </Card>
-          )}
-
-          {hasPermission('laborder.read') && <LabOrdersCard encounterId={encounter._id} encounterStatus={encounter.status} />}
         </div>
 
-        {/* ---------- Right column: vitals and AI, grouped separately from
-             the clinical record on the left since they're read/act-on-data
-             rather than record-keeping. ---------- */}
-        <div className="space-y-5">
+        {/* ---------- Column C: live data & AI — vitals and the tools that
+             read them, kept separate from the clinical record since
+             they're read/act-on-data rather than record-keeping. Spans
+             both tracks at the `lg` stage; see the comment above the outer
+             grid for why. ---------- */}
+        <div className="space-y-5 lg:col-span-2 xl:col-span-1">
           <Card>
             <CardHeader className="flex items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-base">
