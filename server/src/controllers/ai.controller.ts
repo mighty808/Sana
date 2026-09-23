@@ -49,6 +49,15 @@ export async function analyzeVitals(req: Request, res: Response) {
   return ok(res, consultation, 201)
 }
 
+// POST /ai/differential-diagnosis — requires 'ai.consult' (Doctor only).
+export async function suggestDifferentialDiagnosis(req: Request, res: Response) {
+  const consultation = await aiService.suggestDifferentialDiagnosis(req.body.encounter, req.user!.id, req.body.notes)
+  await auditService.logAction(req, req.user!.id, 'AI_CONSULTED', 'AiConsultation', consultation.id, {
+    encounter: req.body.encounter,
+  })
+  return ok(res, consultation, 201)
+}
+
 // POST /ai/explain-lab-result — requires 'ai.explainLabResult' (Lab Tech only).
 export async function explainLabResult(req: Request, res: Response) {
   const consultation = await aiService.explainLabResult(req.body.labResult, req.user!.id, req.body.notes)
