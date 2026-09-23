@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useForm, useFieldArray, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -23,7 +23,7 @@ import { useAuth } from '@/features/auth/useAuth'
 import { useEncounter, useAddVitals, useUpdateVitals, useAddDiagnosis, useCompleteEncounter } from './api'
 import type { UpdateVitalsInput } from './api'
 import { useCreateLabOrder, useLabOrdersForEncounter } from '@/features/labOrders/api'
-import { useAiConsultations, useAnalyzeVitals } from '@/features/ai/api'
+import { useAiConsultations, useAnalyzeVitals, useSuggestDifferentialDiagnosis } from '@/features/ai/api'
 import { useAiAction } from '@/features/ai/useAiAction'
 import { SanaAiPanel } from '@/features/ai/SanaAiPanel'
 import { CollapsibleConsultationGroup } from '@/features/ai/ConsultationGroup'
@@ -36,6 +36,7 @@ import { getApiErrorMessage } from '@/lib/api'
 import { isPopulated } from '@/lib/utils'
 import { formatDateTime } from '@/lib/date'
 import type { VitalSign, EncounterStatus } from '@/types/encounter'
+import type { AiDifferential } from '@/types/aiConsultation'
 import type { Referral } from '@/types/referral'
 import type { Prescription } from '@/types/prescription'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -515,17 +516,111 @@ function NurseAiAnalysis({ encounterId }: { encounterId: string }) {
   )
 }
 
+// A doctor-only shortcut ('ai.consult'), same shape as NurseAiAnalysis
+// above but for the doctor's own "Suggest differential diagnoses" button
+// (see server/src/services/ai.service.ts's suggestDifferentialDiagnosis).
+// Unlike NurseAiAnalysis, `reviewable` is left at its default (true) here —
+// the doctor is both the one asking and the one reviewing, same as their
+// own history in SanaAiPanel. `onAcceptDifferential` is threaded down to
+// AiResponseCard's "Add as diagnosis" button (via CollapsibleConsultationGroup)
+// and, in EncounterPage below, prefills AddDiagnosisForm rather than writing
+// a Diagnosis directly — Sana AI still never touches the clinical record on
+// its own.
+function DoctorDifferentialDiagnosis({
+  encounterId,
+  onAcceptDifferential,
+}: {
+  encounterId: string
+  onAcceptDifferential: (differential: AiDifferential) => void
+}) {
+  const { data: consultations, isLoading } = useAiConsultations(encounterId)
+  const suggestDifferential = useSuggestDifferentialDiagnosis()
+  const { unavailable, run } = useAiAction(suggestDifferential.mutateAsync)
+  const [notes, setNotes] = useState('')
+  const [historyOpen, setHistoryOpen] = useState(false)
+
+  const items = (consultations ?? []).filter((c) => c.source === 'DOCTOR_DIFFERENTIAL_DIAGNOSIS')
+
+  async function handleSuggest() {
+    const consultation = await run({ encounter: encounterId, notes: notes || undefined })
+    if (consultation) setHistoryOpen(true)
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Stethoscope className="size-4 text-indigo-600" /> Differential Diagnosis
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLoading && <Skeleton className="h-20 w-full" />}
+
+        {!isLoading && items.length > 0 && (
+          <CollapsibleConsultationGroup
+            label="Suggested differentials"
+            icon={Stethoscope}
+            iconClassName="text-indigo-700"
+            items={items}
+            encounterId={encounterId}
+            open={historyOpen}
+            onOpenChange={setHistoryOpen}
+            onAcceptDifferential={onAcceptDifferential}
+          />
+        )}
+
+        {unavailable && <AiUnavailableBanner />}
+
+        <Textarea
+          rows={1}
+          placeholder="Optional notes to include (optional)…"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          className="min-h-9 text-xs"
+        />
+        <Button type="button" size="sm" variant="outline" disabled={suggestDifferential.isPending} onClick={handleSuggest}>
+          <Stethoscope className="size-3.5" /> {suggestDifferential.isPending ? 'Thinking…' : 'Suggest differential diagnoses'}
+        </Button>
+      </CardContent>
+    </Card>
+  )
+}
+
 // Same reasoning as AddVitalsForm's collapse behavior above: once at least
 // one diagnosis already exists, the form stays collapsed behind a small
 // button instead of always sitting open under the list. With nothing
 // recorded yet, it opens by default since there's nothing else to show.
-function AddDiagnosisForm({ encounterId, hasExistingDiagnoses }: { encounterId: string; hasExistingDiagnoses: boolean }) {
+//
+// `prefill`/`onPrefillConsumed` exist for the "Add as diagnosis" button on a
+// Sana AI differential-diagnosis suggestion (see DoctorDifferentialDiagnosis
+// above): accepting one sets `prefill` in the parent EncounterPage, which
+// this form picks up, expands itself for, and fills in — the doctor still
+// has to review and submit it themselves, same as every other diagnosis.
+function AddDiagnosisForm({
+  encounterId,
+  hasExistingDiagnoses,
+  prefill,
+  onPrefillConsumed,
+}: {
+  encounterId: string
+  hasExistingDiagnoses: boolean
+  prefill?: DiagnosisForm | null
+  onPrefillConsumed?: () => void
+}) {
   const { expanded, expand, collapse } = useCollapsibleForm(hasExistingDiagnoses)
   const addDiagnosis = useAddDiagnosis(encounterId)
   const form = useForm<DiagnosisForm>({
     resolver: zodResolver(diagnosisFormSchema),
     defaultValues: { diagnosis: '', notes: '' },
   })
+
+  useEffect(() => {
+    if (!prefill) return
+    form.reset(prefill)
+    expand()
+    onPrefillConsumed?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefill])
 
   async function onSubmit(values: DiagnosisForm) {
     try {
@@ -1071,6 +1166,10 @@ export function EncounterPage() {
   const { id } = useParams<{ id: string }>()
   const { user, hasPermission } = useAuth()
   const { data, isLoading } = useEncounter(id)
+  // Set when the doctor clicks "Add as diagnosis" on a Sana AI differential
+  // suggestion (see DoctorDifferentialDiagnosis below) — picked up by
+  // AddDiagnosisForm, which expands and fills itself from it, then clears it.
+  const [diagnosisPrefill, setDiagnosisPrefill] = useState<DiagnosisForm | null>(null)
 
   if (isLoading) {
     return (
@@ -1167,11 +1266,28 @@ export function EncounterPage() {
 
               {hasPermission('diagnosis.create') && encounter.status === 'IN_PROGRESS' && (
                 <div className="border-t border-border pt-4">
-                  <AddDiagnosisForm encounterId={encounter._id} hasExistingDiagnoses={diagnoses.length > 0} />
+                  <AddDiagnosisForm
+                    encounterId={encounter._id}
+                    hasExistingDiagnoses={diagnoses.length > 0}
+                    prefill={diagnosisPrefill}
+                    onPrefillConsumed={() => setDiagnosisPrefill(null)}
+                  />
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {hasPermission('ai.consult') && encounter.status === 'IN_PROGRESS' && (
+            <DoctorDifferentialDiagnosis
+              encounterId={encounter._id}
+              onAcceptDifferential={(differential) =>
+                setDiagnosisPrefill({
+                  diagnosis: differential.condition,
+                  notes: `Suggested by Sana AI (confidence: ${differential.confidence.toLowerCase()}) — ${differential.reasoning}`,
+                })
+              }
+            />
+          )}
 
           {/* Referring is restricted to the assigned doctor client-side too
               (unlike AddDiagnosisForm above), since only they can actually
