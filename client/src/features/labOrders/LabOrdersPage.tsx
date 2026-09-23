@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { FlaskConical, PlusCircle, Send, Sparkles, Clock, Hourglass, AlertTriangle, Printer } from 'lucide-react'
+import { FlaskConical, PlusCircle, Send, Sparkles, Clock, Hourglass, AlertTriangle, Printer, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/useAuth'
 import { useLabOrders, useLabOrder } from './api'
@@ -134,20 +134,26 @@ function EnterResultForm({ order }: { order: LabOrder }) {
               </FormItem>
             )}
           />
+          {/* Result gets its own full-width row — it's the field that
+              actually matters, and needs the room for longer values (e.g.
+              titers like "O:1:40, H:1:80"). Unit/Reference range are a
+              secondary pair below it; Interpretation is its own row rather
+              than sharing a cell with three other fields of very different
+              importance. */}
+          <FormField
+            control={form.control}
+            name="resultValue"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Result</FormLabel>
+                <FormControl>
+                  <Input placeholder="e.g. Positive, 14.2" {...field} />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
           <div className="grid grid-cols-2 gap-x-4 gap-y-4">
-            <FormField
-              control={form.control}
-              name="resultValue"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Result</FormLabel>
-                  <FormControl>
-                    <Input placeholder="e.g. Positive, 14.2" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
             <FormField
               control={form.control}
               name="unit"
@@ -172,30 +178,30 @@ function EnterResultForm({ order }: { order: LabOrder }) {
                 </FormItem>
               )}
             />
-            <FormField
-              control={form.control}
-              name="interpretation"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Interpretation (optional)</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value}>
-                    <FormControl>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="—" />
-                      </SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {LAB_RESULT_INTERPRETATIONS.map((i) => (
-                        <SelectItem key={i} value={i}>
-                          {i.charAt(0) + i.slice(1).toLowerCase()}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </FormItem>
-              )}
-            />
           </div>
+          <FormField
+            control={form.control}
+            name="interpretation"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Interpretation (optional)</FormLabel>
+                <Select onValueChange={field.onChange} value={field.value}>
+                  <FormControl>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="—" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {LAB_RESULT_INTERPRETATIONS.map((i) => (
+                      <SelectItem key={i} value={i}>
+                        {i.charAt(0) + i.slice(1).toLowerCase()}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )}
+          />
           <FormField
             control={form.control}
             name="notes"
@@ -232,25 +238,30 @@ function EnterResultForm({ order }: { order: LabOrder }) {
 // (useLabOrderResultAnalyses) instead of having each result make its own
 // separate request — see ai/api.ts. There are no accept/ignore review buttons
 // here, since reviewing AI output stays the doctor's job alone.
-function LabResultAiExplain({
-  result,
-  labOrderId,
-  analyses,
-}: {
-  result: LabResult
-  labOrderId: string
-  analyses: AiConsultation[]
-}) {
-  const explainResult = useExplainLabResult()
-  const { unavailable, run } = useAiAction(explainResult.mutateAsync)
-
+// A closed-by-default disclosure for one result's past AI explanations.
+// Deliberately NOT the same bordered/tinted CollapsibleConsultationGroup
+// bar the doctor's and nurse's own AI history use elsewhere — this can
+// appear once per test on an order, and three of those full-width bars
+// stacked back to back overwhelmed the dialog. A plain text toggle keeps
+// the collapsed state visually quiet; the expanded content still uses the
+// same blue-tinted card treatment as everywhere else once there's
+// actually something to look at. `basis-full` is what lets this sit
+// inside LabResultAiExplain's flex-wrap button row below and still force
+// itself onto its own line rather than squeezing next to the buttons.
+function PastExplanationsToggle({ analyses }: { analyses: AiConsultation[] }) {
+  const [open, setOpen] = useState(false)
   return (
-    <div className="mt-2 space-y-2">
-      {/* Capped and scrollable — same reasoning as SanaAiPanel's history: a
-          lab tech re-explaining the same result a few times shouldn't let
-          this list grow past a fixed height. */}
-      {analyses.length > 0 && (
-        <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+    <div className="basis-full">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 text-xs font-medium text-blue-700 hover:text-blue-800"
+      >
+        Past explanations ({analyses.length})
+        <ChevronDown className={`size-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
           {analyses.map((consultation) => (
             <div key={consultation._id} className="rounded-lg border border-blue-200 bg-blue-50/60 p-4">
               <AiResponseCard consultation={consultation} />
@@ -258,7 +269,41 @@ function LabResultAiExplain({
           ))}
         </div>
       )}
-      {unavailable && <AiUnavailableBanner />}
+    </div>
+  )
+}
+
+// Only available to a Lab Tech (they hold the 'ai.explainLabResult' permission,
+// which is different from the Doctor-only 'ai.consult' permission). This asks
+// Sana AI to explain one entered result in plain language (see
+// server/src/services/ai.service.ts's explainLabResult). The `analyses` prop,
+// which holds this result's past explanations, is passed down from
+// LabOrderDetailDialog. That parent component fetches the explanation history
+// for every result on the whole order in a single batched call
+// (useLabOrderResultAnalyses) instead of having each result make its own
+// separate request — see ai/api.ts. There are no accept/ignore review buttons
+// here, since reviewing AI output stays the doctor's job alone.
+//
+// `releaseButton` is threaded in from the caller rather than rendered
+// alongside this component, so Release and Explain result end up as two
+// buttons in the same row instead of two separate stacked blocks.
+function LabResultAiExplain({
+  result,
+  labOrderId,
+  analyses,
+  releaseButton,
+}: {
+  result: LabResult
+  labOrderId: string
+  analyses: AiConsultation[]
+  releaseButton?: ReactNode
+}) {
+  const explainResult = useExplainLabResult()
+  const { unavailable, run } = useAiAction(explainResult.mutateAsync)
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2">
+      {releaseButton}
       <Button
         size="sm"
         variant="outline"
@@ -267,6 +312,12 @@ function LabResultAiExplain({
       >
         <Sparkles className="size-4" /> {explainResult.isPending ? 'Explaining…' : 'Explain result'}
       </Button>
+      {unavailable && (
+        <div className="basis-full">
+          <AiUnavailableBanner />
+        </div>
+      )}
+      {analyses.length > 0 && <PastExplanationsToggle analyses={analyses} />}
     </div>
   )
 }
@@ -280,7 +331,7 @@ function LabResultAiExplain({
 // it out, rather than needing its own near-duplicate markup.
 function LabResultRow({ test, result, actions }: { test: LabTestItem; result: LabResult | undefined; actions?: ReactNode }) {
   return (
-    <li className="rounded-lg border border-border p-3">
+    <li className="rounded-lg border border-border bg-slate-50/60 p-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-slate-900">{test.testName}</p>
         <StatusBadge status={result ? result.status : 'PENDING'} />
@@ -372,7 +423,7 @@ function LabOrderDetailDialog({
   return (
     <>
       <Dialog open={orderId !== null} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-xl">
           {isLoading || !data ? (
             <div className="space-y-3 py-4">
               <Skeleton className="h-5 w-40" />
@@ -408,38 +459,39 @@ function LabOrderDetailDialog({
                 </DialogDescription>
               </DialogHeader>
 
-              <ul className="space-y-2">
-                {matchedTests.map(({ test, result, index }) => (
-                  <LabResultRow
-                    key={`${test.testName}-${index}`}
-                    test={test}
-                    result={result}
-                    actions={
-                      result && (
-                        <>
-                          {canRelease && result.status === 'ENTERED' && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              disabled={releaseResult.isPending}
-                              onClick={() => handleRelease(result._id, result.testName)}
-                              className="mt-1"
-                            >
-                              <Send className="size-4" /> Release
-                            </Button>
-                          )}
-                          {canExplain && (
-                            <LabResultAiExplain
-                              result={result}
-                              labOrderId={data.order._id}
-                              analyses={analysesByResultId.get(result._id) ?? []}
-                            />
-                          )}
-                        </>
-                      )
-                    }
-                  />
-                ))}
+              <ul className="space-y-3">
+                {matchedTests.map(({ test, result, index }) => {
+                  const releaseButton = result && canRelease && result.status === 'ENTERED' && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={releaseResult.isPending}
+                      onClick={() => handleRelease(result._id, result.testName)}
+                    >
+                      <Send className="size-4" /> Release
+                    </Button>
+                  )
+                  return (
+                    <LabResultRow
+                      key={`${test.testName}-${index}`}
+                      test={test}
+                      result={result}
+                      actions={
+                        result &&
+                        (canExplain ? (
+                          <LabResultAiExplain
+                            result={result}
+                            labOrderId={data.order._id}
+                            analyses={analysesByResultId.get(result._id) ?? []}
+                            releaseButton={releaseButton}
+                          />
+                        ) : (
+                          releaseButton && <div className="mt-3">{releaseButton}</div>
+                        ))
+                      }
+                    />
+                  )
+                })}
               </ul>
 
               {canEnter && <EnterResultForm order={data.order} />}
