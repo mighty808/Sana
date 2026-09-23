@@ -241,6 +241,30 @@ def _format_context(patient_context: dict) -> str:
     symptoms = patient_context.get("symptoms")
     if symptoms:
         parts.append("Additional notes: " + ", ".join(symptoms))
+    # Plural and distinct from `testResult` above: that field holds the one
+    # result a lab tech is explaining, sent alone with no other context. This
+    # holds every result recorded on the encounter so far, sent alongside the
+    # chief complaint and vitals for the doctor's differential-diagnosis
+    # request — diagnosis reasoning needs the fuller picture a single result
+    # doesn't give.
+    lab_results = patient_context.get("labResults")
+    if lab_results:
+        lines = []
+        for lab in lab_results:
+            bits = []
+            if lab.get("testName"):
+                bits.append(lab["testName"])
+            value_bits = [str(lab[k]) for k in ("resultValue", "unit") if lab.get(k)]
+            if value_bits:
+                bits.append(" ".join(value_bits))
+            if lab.get("referenceRange"):
+                bits.append(f"(reference range: {lab['referenceRange']})")
+            if lab.get("interpretation"):
+                bits.append(f"— {lab['interpretation']}")
+            if bits:
+                lines.append(" ".join(bits))
+        if lines:
+            parts.append("Lab results:\n" + "\n".join(f"- {line}" for line in lines))
     return "\n".join(parts) if parts else "(no additional context provided)"
 
 
@@ -368,6 +392,77 @@ def _run_acuity_llm(user_prompt: str) -> tuple[int, list[str], str]:
         )
 
 
+DIFFERENTIAL_CONFIDENCE_LEVELS = {"HIGH", "MODERATE", "LOW"}
+
+DIFFERENTIAL_SYSTEM_PROMPT = (
+    "You are Sana AI, helping a doctor think through differential diagnoses for a "
+    "patient, using retrieved reference passages plus the patient's chief complaint, "
+    "vitals, and lab results. You do not diagnose — you propose candidates for the "
+    "doctor to weigh, not a final answer.\n\n"
+    "Respond with ONLY a single JSON object — no markdown code fences, no text "
+    "before or after it — with exactly these keys:\n"
+    '  "summary": 2-4 sentences of plain prose giving an overview of what the '
+    "presentation suggests, grounded in the retrieved passages;\n"
+    '  "differentials": a list of up to 5 objects, ordered most to least likely, '
+    'each with exactly these keys: "condition" (a short diagnosis name), '
+    '"confidence" (one of "HIGH", "MODERATE", or "LOW", reflecting how well the '
+    'presentation and retrieved passages support it), and "reasoning" (one short '
+    "sentence citing the specific findings — symptoms, vitals, or lab values — "
+    "that support this candidate).\n\n"
+    "Only state a specific numeric threshold, dose, or named drug/regimen if it "
+    "appears in the retrieved passages — otherwise speak in general terms. If the "
+    "retrieved material says no passages are strongly relevant, say so plainly in "
+    "the summary and give only the differentials the raw presentation itself "
+    "supports, rather than inventing ones the passages don't back up. Never present "
+    "any entry as a confirmed diagnosis."
+)
+
+
+def _run_differential_llm(user_prompt: str) -> tuple[str, list[dict]]:
+    """
+    Asks the LLM for a structured differential-diagnosis read (summary,
+    differentials) as JSON, grounded in the same retrieved passages and
+    patient context the plain-guidance path uses. Mirrors _run_acuity_llm's
+    fail-safe philosophy: if the model doesn't return parseable JSON, the raw
+    response text is surfaced as the summary — clearly not a normal answer —
+    rather than silently returning an empty differentials list, which would
+    look like "the AI found nothing" instead of "the AI's answer couldn't be
+    read".
+    """
+    llm = _get_llm()
+    completion = llm.invoke(
+        [
+            {"role": "system", "content": DIFFERENTIAL_SYSTEM_PROMPT},
+            {"role": "user", "content": user_prompt},
+        ]
+    )
+    raw = str(completion.content)
+
+    try:
+        parsed = json.loads(_JSON_FENCE_RE.sub("", raw.strip()))
+        summary = str(parsed["summary"])
+        differentials = []
+        for item in parsed.get("differentials", []):
+            if not isinstance(item, dict):
+                continue
+            condition = item.get("condition")
+            reasoning = item.get("reasoning")
+            confidence = str(item.get("confidence", "")).upper()
+            if (
+                isinstance(condition, str)
+                and isinstance(reasoning, str)
+                and confidence in DIFFERENTIAL_CONFIDENCE_LEVELS
+            ):
+                differentials.append({"condition": condition, "confidence": confidence, "reasoning": reasoning})
+        return summary, differentials[:5]
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return (
+            "Sana AI's structured differential-diagnosis read failed to parse — review the response text directly: "
+            + raw,
+            [],
+        )
+
+
 SYSTEM_PROMPT = (
     "You are Sana AI, a clinical decision-SUPPORT assistant embedded in a "
     "hospital system used by licensed doctors, nurses, and laboratory technicians. "
@@ -393,7 +488,12 @@ SYSTEM_PROMPT = (
 )
 
 
-def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> dict:
+def consult(
+    query: str,
+    patient_context: dict,
+    assess_acuity: bool = False,
+    assess_differential: bool = False,
+) -> dict:
     """
     Runs the full RAG pipeline for one query, and returns a dict shaped to
     match the ConsultResponse model the Express server expects (see main.py).
@@ -404,6 +504,14 @@ def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> d
     vitals (_assess_vitals) combined with the LLM's own read of the
     retrieved knowledge-base passages (_run_acuity_llm), taking whichever
     of the two is more severe.
+
+    When assess_differential is True (only the doctor's "Suggest
+    differential diagnoses" button sets this — see ai.service.ts's
+    suggestDifferentialDiagnosis), the LLM instead returns a structured
+    differentials read (_run_differential_llm) in place of the plain
+    guidance text. The two flags are mutually exclusive in practice — never
+    set together by any caller — so assess_acuity is checked first and
+    assess_differential only applies in the plain-guidance branch.
     """
     started = time.monotonic()
 
@@ -424,11 +532,12 @@ def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> d
     # knowledge base not covering the question.
     top_score = max((score for _doc, score in results), default=None)
     logger.info(
-        "consult: retrieved=%d grounded=%d top_score=%s acuity=%s query=%.80r",
+        "consult: retrieved=%d grounded=%d top_score=%s acuity=%s differential=%s query=%.80r",
         len(results),
         len(grounded_results),
         f"{top_score:.4f}" if top_score is not None else "n/a",
         assess_acuity,
+        assess_differential,
         query,
     )
     if not grounded_results:
@@ -452,6 +561,7 @@ def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> d
 
     acuity_level: int | None = None
     acuity_reasons: list[str] = []
+    differentials: list[dict] | None = None
 
     if assess_acuity:
         vitals_level, vitals_reasons = _assess_vitals(patient_context.get("vitals") or {})
@@ -460,6 +570,8 @@ def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> d
         # dict.fromkeys dedupes while keeping the original order, in case the
         # LLM happens to echo a reason already caught by the vitals check.
         acuity_reasons = list(dict.fromkeys(vitals_reasons + llm_reasons))[:5]
+    elif assess_differential:
+        guidance, differentials = _run_differential_llm(user_prompt)
     else:
         llm = _get_llm()
         completion = llm.invoke(
@@ -508,4 +620,5 @@ def consult(query: str, patient_context: dict, assess_acuity: bool = False) -> d
         },
         "acuityLevel": ACUITY_LEVEL_NAMES[acuity_level] if acuity_level is not None else None,
         "acuityReasons": acuity_reasons or None,
+        "differentials": differentials if differentials is not None else None,
     }
