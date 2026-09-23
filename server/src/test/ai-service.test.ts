@@ -1,5 +1,11 @@
 import { jest } from '@jest/globals'
-import { consultAI, explainLabResult, reviewConsultation, listConsultationsForLabOrder } from '../services/ai.service.js'
+import {
+  consultAI,
+  explainLabResult,
+  reviewConsultation,
+  listConsultationsForLabOrder,
+  suggestDifferentialDiagnosis,
+} from '../services/ai.service.js'
 import { Notification } from '../models/Notification.js'
 import { connectTestDb, clearTestDb, disconnectTestDb, DB_BOOT_TIMEOUT_MS } from './setupTestDb.js'
 import { createUser, createPatient, createEncounter, createLabOrder, createAiConsultation } from './factories.js'
@@ -81,6 +87,78 @@ describe('explainLabResult', () => {
     await expect(explainLabResult('507f1f77bcf86cd799439011', labTech.id)).rejects.toMatchObject({
       status: 404,
       code: 'LAB_RESULT_NOT_FOUND',
+    })
+  })
+})
+
+describe('suggestDifferentialDiagnosis', () => {
+  test('the assigned doctor gets a DOCTOR_DIFFERENTIAL_DIAGNOSIS consultation back, carrying the differentials list', async () => {
+    mockAiServiceResponse({
+      diagnosticGuidance: 'Fever with chills is consistent with a few common causes.',
+      differentials: [{ condition: 'Malaria', confidence: 'HIGH', reasoning: 'Fever and chills.' }],
+    })
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+
+    const consultation = await suggestDifferentialDiagnosis(encounter.id, doctor.id)
+
+    expect(consultation.source).toBe('DOCTOR_DIFFERENTIAL_DIAGNOSIS')
+    // Mapped to plain objects rather than asserting on the Mongoose
+    // subdocument array directly — toEqual's deep comparison trips over
+    // properties Mongoose's EmbeddedDocument adds beyond the schema fields.
+    const differentials = consultation.response?.differentials?.map((d) => ({
+      condition: d.condition,
+      confidence: d.confidence,
+      reasoning: d.reasoning,
+    }))
+    expect(differentials).toEqual([{ condition: 'Malaria', confidence: 'HIGH', reasoning: 'Fever and chills.' }])
+  })
+
+  test('includes the encounter\'s lab results in what is sent to the AI service, including an ENTERED (not yet RELEASED) one', async () => {
+    const fetchSpy = mockAiServiceResponse()
+    const doctor = await createUser('DOCTOR')
+    const labTech = await createUser('LAB_TECH')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    // createLabOrder's factory default order only has a 'CBC' slot — using
+    // that same name here, rather than an arbitrary one, is what
+    // createLabResult's "was this test actually ordered" check requires.
+    const order = await createLabOrder(doctor.id, patient.id, encounter.id)
+    const { createLabResult } = await import('../services/labResult.service.js')
+    await createLabResult({ labOrder: order.id, testName: 'CBC', resultValue: '11.0 g/dL' }, labTech.id)
+
+    await suggestDifferentialDiagnosis(encounter.id, doctor.id)
+
+    const body = JSON.parse((fetchSpy.mock.calls[0]?.[1] as RequestInit).body as string)
+    expect(body.assessDifferential).toBe(true)
+    expect(body.patientContext.labResults).toEqual([
+      expect.objectContaining({ testName: 'CBC', resultValue: '11.0 g/dL' }),
+    ])
+  })
+
+  test('a different doctor cannot request differentials for an encounter that is not theirs', async () => {
+    mockAiServiceResponse()
+    const owner = await createUser('DOCTOR')
+    const stranger = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(owner.id, patient.id)
+
+    await expect(suggestDifferentialDiagnosis(encounter.id, stranger.id)).rejects.toMatchObject({
+      status: 404,
+      code: 'ENCOUNTER_NOT_FOUND',
+    })
+  })
+
+  test('rejects a request against a completed encounter', async () => {
+    mockAiServiceResponse()
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id, { status: 'COMPLETED' })
+
+    await expect(suggestDifferentialDiagnosis(encounter.id, doctor.id)).rejects.toMatchObject({
+      status: 409,
+      code: 'ENCOUNTER_COMPLETED',
     })
   })
 })
