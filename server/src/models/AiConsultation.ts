@@ -9,17 +9,23 @@ export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number]
 // the fixed "AI Analysis" button on vitals they just recorded (see
 // ai.service.ts's analyzeVitalsForNurse). LABTECH_RESULT_ANALYSIS: a Lab
 // Tech used the fixed "Explain result" button on one test result (see
-// ai.service.ts's explainLabResult).
+// ai.service.ts's explainLabResult). DOCTOR_DIFFERENTIAL_DIAGNOSIS: a
+// Doctor used the fixed "Suggest differential diagnoses" button (see
+// ai.service.ts's suggestDifferentialDiagnosis).
 export const AI_CONSULTATION_SOURCES = [
   'MANUAL',
   'AUTO_VITALS',
   'NURSE_VITALS_ANALYSIS',
   'LABTECH_RESULT_ANALYSIS',
+  'DOCTOR_DIFFERENTIAL_DIAGNOSIS',
 ] as const
 export type AiConsultationSource = (typeof AI_CONSULTATION_SOURCES)[number]
 
 export const AI_ACUITY_LEVELS = ['STABLE', 'URGENT', 'CRITICAL'] as const
 export type AiAcuityLevel = (typeof AI_ACUITY_LEVELS)[number]
+
+export const AI_DIFFERENTIAL_CONFIDENCE_LEVELS = ['HIGH', 'MODERATE', 'LOW'] as const
+export type AiDifferentialConfidence = (typeof AI_DIFFERENTIAL_CONFIDENCE_LEVELS)[number]
 
 // One question asked to Sana AI during an encounter, and the answer the
 // RAG pipeline gave back. This is kept as its own collection, separate
@@ -67,6 +73,11 @@ const aiConsultationSchema = new Schema(
       // since that flow doesn't have any of those — it's about a lab
       // result, not a visit.
       testResult: { type: Schema.Types.Mixed },
+      // Only set for DOCTOR_DIFFERENTIAL_DIAGNOSIS — plural and distinct
+      // from testResult above: every lab result recorded on the encounter
+      // so far, not just one, since differential-diagnosis reasoning needs
+      // the fuller picture.
+      labResults: { type: Schema.Types.Mixed },
     },
     response: {
       diagnosticGuidance: { type: String, required: true },
@@ -100,6 +111,23 @@ const aiConsultationSchema = new Schema(
       // 88% is critically low".
       acuityLevel: { type: String, enum: AI_ACUITY_LEVELS },
       acuityReasons: { type: [String], default: undefined },
+      // Only set for DOCTOR_DIFFERENTIAL_DIAGNOSIS — a ranked list of
+      // candidate diagnoses the LLM proposed from the retrieved passages
+      // plus the patient context (see ai-service/rag/pipeline.py's
+      // _run_differential_llm). This never writes to the Diagnosis
+      // collection on its own — a doctor still has to accept one into a
+      // real diagnosis by hand, the same "AI never writes to the clinical
+      // record" rule every other field on this model already follows.
+      differentials: {
+        type: [
+          {
+            condition: { type: String, required: true },
+            confidence: { type: String, enum: AI_DIFFERENTIAL_CONFIDENCE_LEVELS, required: true },
+            reasoning: { type: String, required: true },
+          },
+        ],
+        default: undefined,
+      },
     },
     ragMetadata: {
       model: { type: String },
