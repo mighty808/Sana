@@ -31,3 +31,9 @@ export const explainLabResultSchema = z.object({
   labResult: z.string().min(1),
   notes: z.string().trim().max(1000).optional(),
 })
+
+// Validates POST /ai/differential-diagnosis request bodies (Doctor-only).
+export const differentialDiagnosisSchema = z.object({
+  encounter: z.string().min(1),
+  notes: z.string().trim().max(1000).optional(),
+})
