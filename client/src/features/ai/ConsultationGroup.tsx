@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Check, CircleSlash, CircleDot, ChevronDown, type LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { useReviewConsultation } from './api'
-import type { AiConsultation } from '@/types/aiConsultation'
+import type { AiConsultation, AiDifferential } from '@/types/aiConsultation'
 import { getApiErrorMessage } from '@/lib/api'
 import { AiResponseCard } from '@/components/AiResponseCard'
 import { Button } from '@/components/ui/button'
@@ -23,10 +23,14 @@ export function ConsultationCard({
   consultation,
   encounterId,
   reviewable = true,
+  onAcceptDifferential,
 }: {
   consultation: AiConsultation
   encounterId: string
   reviewable?: boolean
+  // Only meaningful for a DOCTOR_DIFFERENTIAL_DIAGNOSIS consultation — see
+  // AiResponseCard's own comment on this prop.
+  onAcceptDifferential?: (differential: AiDifferential) => void
 }) {
   const reviewConsultation = useReviewConsultation(encounterId)
   const [commentDraft, setCommentDraft] = useState('')
@@ -42,7 +46,7 @@ export function ConsultationCard({
 
   return (
     <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-4">
-      <AiResponseCard consultation={consultation} />
+      <AiResponseCard consultation={consultation} onAcceptDifferential={onAcceptDifferential} />
 
       {reviewable && consultation.reviewStatus === 'UNREVIEWED' && (
         <div className="mt-3 space-y-2 border-t border-blue-200 pt-3">
@@ -105,6 +109,7 @@ export function CollapsibleConsultationGroup({
   defaultOpen = false,
   open: openProp,
   onOpenChange,
+  onAcceptDifferential,
 }: {
   label: string
   icon: LucideIcon
@@ -115,6 +120,9 @@ export function CollapsibleConsultationGroup({
   defaultOpen?: boolean
   open?: boolean
   onOpenChange?: (open: boolean) => void
+  // Only meaningful for a DOCTOR_DIFFERENTIAL_DIAGNOSIS group — see
+  // AiResponseCard's own comment on this prop.
+  onAcceptDifferential?: (differential: AiDifferential) => void
 }) {
   const [internalOpen, setInternalOpen] = useState(defaultOpen)
   const open = openProp ?? internalOpen
@@ -137,6 +145,7 @@ export function CollapsibleConsultationGroup({
               consultation={consultation}
               encounterId={encounterId}
               reviewable={reviewable}
+              onAcceptDifferential={onAcceptDifferential}
             />
           ))}
         </div>
