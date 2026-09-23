@@ -81,6 +81,10 @@ class PatientContext(BaseModel):
     # test's own fields (name, value, unit, reference range,
     # interpretation), and is never sent together with chiefComplaint or vitals.
     testResult: dict | None = None
+    # Only set for the doctor's "Suggest differential diagnoses" request.
+    # Plural — every lab result recorded on the encounter so far, unlike the
+    # single `testResult` above.
+    labResults: list[dict] | None = None
 
 
 class ConsultRequest(BaseModel):
@@ -91,6 +95,11 @@ class ConsultRequest(BaseModel):
     # works out an acuityLevel/acuityReasons triage read from the vitals
     # and the retrieved knowledge base, on top of the usual guidance text.
     assessAcuity: bool = False
+    # Only set true by the doctor's "Suggest differential diagnoses" button
+    # (see ai.service.ts's suggestDifferentialDiagnosis). When true, the
+    # pipeline returns a structured differentials read in place of the usual
+    # guidance text.
+    assessDifferential: bool = False
 
 
 class Source(BaseModel):
@@ -112,6 +121,12 @@ class RagMetadata(BaseModel):
     responseTimeMs: int | None = None
 
 
+class Differential(BaseModel):
+    condition: str
+    confidence: str
+    reasoning: str
+
+
 class ConsultResponse(BaseModel):
     diagnosticGuidance: str
     sources: list[Source]
@@ -120,6 +135,8 @@ class ConsultResponse(BaseModel):
     # Only set when the request had assessAcuity=True.
     acuityLevel: str | None = None
     acuityReasons: list[str] | None = None
+    # Only set when the request had assessDifferential=True.
+    differentials: list[Differential] | None = None
 
 
 @app.get("/health")
@@ -178,7 +195,7 @@ def consult(req: ConsultRequest):
     patient_context = req.patientContext.model_dump() if req.patientContext else {}
 
     try:
-        result = run_rag_pipeline(req.query, patient_context, req.assessAcuity)
+        result = run_rag_pipeline(req.query, patient_context, req.assessAcuity, req.assessDifferential)
     except Exception as exc:  # noqa: BLE001 — this catches any exception on
         # purpose. Any failure in the pipeline (the embedding model failing
         # to load, a Groq API error, a vector store problem) should reach
