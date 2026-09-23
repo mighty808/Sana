@@ -7,12 +7,14 @@ export type AiReviewStatus = (typeof AI_REVIEW_STATUSES)[number]
 // NURSE_VITALS_ANALYSIS means a Nurse clicked the "AI Analysis" button on
 // vitals (analyzeVitalsForNurse). LABTECH_RESULT_ANALYSIS means a Lab Tech
 // clicked the "Explain result" button on one test result
-// (explainLabResult).
+// (explainLabResult). DOCTOR_DIFFERENTIAL_DIAGNOSIS means a Doctor clicked
+// the "Suggest differential diagnoses" button (suggestDifferentialDiagnosis).
 export const AI_CONSULTATION_SOURCES = [
   'MANUAL',
   'AUTO_VITALS',
   'NURSE_VITALS_ANALYSIS',
   'LABTECH_RESULT_ANALYSIS',
+  'DOCTOR_DIFFERENTIAL_DIAGNOSIS',
 ] as const
 export type AiConsultationSource = (typeof AI_CONSULTATION_SOURCES)[number]
 
@@ -22,6 +24,18 @@ export type AiConsultationSource = (typeof AI_CONSULTATION_SOURCES)[number]
 // _run_acuity_llm).
 export const AI_ACUITY_LEVELS = ['STABLE', 'URGENT', 'CRITICAL'] as const
 export type AiAcuityLevel = (typeof AI_ACUITY_LEVELS)[number]
+
+// Only set on DOCTOR_DIFFERENTIAL_DIAGNOSIS consultations — how well the
+// presentation and retrieved passages support one candidate diagnosis (see
+// ai-service/rag/pipeline.py's _run_differential_llm).
+export const AI_DIFFERENTIAL_CONFIDENCE_LEVELS = ['HIGH', 'MODERATE', 'LOW'] as const
+export type AiDifferentialConfidence = (typeof AI_DIFFERENTIAL_CONFIDENCE_LEVELS)[number]
+
+export interface AiDifferential {
+  condition: string
+  confidence: AiDifferentialConfidence
+  reasoning: string
+}
 
 export interface AiSource {
   title: string
@@ -61,6 +75,15 @@ export interface AiConsultation {
       referenceRange?: string
       interpretation?: string
     }
+    // Only set for DOCTOR_DIFFERENTIAL_DIAGNOSIS — plural and distinct from
+    // testResult above: every lab result recorded on the encounter so far.
+    labResults?: Array<{
+      testName?: string
+      resultValue?: string
+      unit?: string
+      referenceRange?: string
+      interpretation?: string
+    }>
   }
   response: {
     diagnosticGuidance: string
@@ -68,6 +91,7 @@ export interface AiConsultation {
     disclaimer: string
     acuityLevel?: AiAcuityLevel
     acuityReasons?: string[]
+    differentials?: AiDifferential[]
   }
   ragMetadata?: {
     model?: string
