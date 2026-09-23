@@ -4,7 +4,13 @@ import { requirePermission, requireAnyPermission } from '../middleware/rbac.js'
 import { validate } from '../middleware/validate.js'
 import { validateObjectId } from '../middleware/validateObjectId.js'
 import { aiRateLimiter } from '../middleware/rateLimiter.js'
-import { consultAiSchema, reviewAiConsultationSchema, analyzeVitalsSchema, explainLabResultSchema } from '../schemas/ai.js'
+import {
+  consultAiSchema,
+  reviewAiConsultationSchema,
+  analyzeVitalsSchema,
+  explainLabResultSchema,
+  differentialDiagnosisSchema,
+} from '../schemas/ai.js'
 import * as ctrl from '../controllers/ai.controller.js'
 
 const router = Router()
@@ -149,6 +155,45 @@ router.post(
   requirePermission('ai.analyzeVitals'),
   validate(analyzeVitalsSchema),
   ctrl.analyzeVitals,
+)
+
+/**
+ * @openapi
+ * /ai/differential-diagnosis:
+ *   post:
+ *     summary: Doctor-only fixed-question AI differential-diagnosis suggestion
+ *     tags: [Sana AI]
+ *     description: >
+ *       Uses the same anonymized-data AI pipeline as /ai/consult, but instead
+ *       of a free-text question, it asks a fixed question and also sends the
+ *       encounter's lab results alongside the chief complaint and vitals.
+ *       Returns a ranked list of candidate diagnoses with confidence and
+ *       reasoning — Sana AI never writes these into the Diagnosis collection
+ *       itself; the doctor still adds one by hand if it's useful. Requires
+ *       'ai.consult', same as /ai/consult.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [encounter]
+ *             properties:
+ *               encounter: { type: string, description: Encounter ObjectId }
+ *               notes: { type: string, maxLength: 1000 }
+ *     responses:
+ *       201:
+ *         description: AI consultation created, with the RAG pipeline's response.
+ *       503:
+ *         description: Sana AI is currently unavailable.
+ */
+router.post(
+  '/differential-diagnosis',
+  auth,
+  aiRateLimiter,
+  requirePermission('ai.consult'),
+  validate(differentialDiagnosisSchema),
+  ctrl.suggestDifferentialDiagnosis,
 )
 
 /**
