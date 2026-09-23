@@ -35,6 +35,7 @@ def _fake_pipeline_result(**overrides):
         "ragMetadata": {"model": "test-model", "retrievalCount": 1, "responseTimeMs": 12},
         "acuityLevel": None,
         "acuityReasons": None,
+        "differentials": None,
     }
     result.update(overrides)
     return result
@@ -170,10 +171,11 @@ def test_a_503_body_carries_no_traceback(client, api_key, monkeypatch):
 def test_patient_context_reaches_the_pipeline(client, api_key, monkeypatch):
     captured = {}
 
-    def _capture(query, patient_context, assess_acuity):
+    def _capture(query, patient_context, assess_acuity, assess_differential):
         captured["query"] = query
         captured["context"] = patient_context
         captured["assess_acuity"] = assess_acuity
+        captured["assess_differential"] = assess_differential
         return _fake_pipeline_result()
 
     monkeypatch.setattr(main, "run_rag_pipeline", _capture)
@@ -198,7 +200,7 @@ def test_a_request_with_no_patient_context_sends_an_empty_dict(client, api_key, 
     must get {} rather than None, which _format_context can't index."""
     captured = {}
 
-    def _capture(_query, patient_context, _assess_acuity):
+    def _capture(_query, patient_context, _assess_acuity, _assess_differential):
         captured["context"] = patient_context
         return _fake_pipeline_result()
 
@@ -214,7 +216,7 @@ def test_assess_acuity_defaults_to_false(client, api_key, monkeypatch):
     Express stores acuity only for NURSE_VITALS_ANALYSIS."""
     captured = {}
 
-    def _capture(_query, _context, assess_acuity):
+    def _capture(_query, _context, assess_acuity, _assess_differential):
         captured["assess_acuity"] = assess_acuity
         return _fake_pipeline_result()
 
@@ -223,6 +225,50 @@ def test_assess_acuity_defaults_to_false(client, api_key, monkeypatch):
     client.post("/v1/consult", json={"query": "A question"})
 
     assert captured["assess_acuity"] is False
+
+
+def test_assess_differential_defaults_to_false(client, api_key, monkeypatch):
+    """Same fail-safe reasoning as assessAcuity above — a request that forgets
+    the flag must not silently get a differential-diagnosis read."""
+    captured = {}
+
+    def _capture(_query, _context, _assess_acuity, assess_differential):
+        captured["assess_differential"] = assess_differential
+        return _fake_pipeline_result()
+
+    monkeypatch.setattr(main, "run_rag_pipeline", _capture)
+
+    client.post("/v1/consult", json={"query": "A question"})
+
+    assert captured["assess_differential"] is False
+
+
+def test_assess_differential_reaches_the_pipeline(client, api_key, monkeypatch):
+    captured = {}
+
+    def _capture(_query, _context, _assess_acuity, assess_differential):
+        captured["assess_differential"] = assess_differential
+        return _fake_pipeline_result()
+
+    monkeypatch.setattr(main, "run_rag_pipeline", _capture)
+
+    client.post("/v1/consult", json={"query": "What are the differentials?", "assessDifferential": True})
+
+    assert captured["assess_differential"] is True
+
+
+def test_a_differential_response_carries_the_list(client, api_key, monkeypatch):
+    monkeypatch.setattr(
+        main,
+        "run_rag_pipeline",
+        lambda *_args: _fake_pipeline_result(
+            differentials=[{"condition": "Malaria", "confidence": "HIGH", "reasoning": "Fever and chills."}]
+        ),
+    )
+
+    body = client.post("/v1/consult", json={"query": "Assess", "assessDifferential": True}).json()
+
+    assert body["differentials"] == [{"condition": "Malaria", "confidence": "HIGH", "reasoning": "Fever and chills."}]
 
 
 def test_an_acuity_response_carries_level_and_reasons(client, api_key, monkeypatch):
