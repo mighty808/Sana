@@ -1,6 +1,13 @@
 import type { ReactNode } from 'react'
-import { Activity, AlertTriangle, FlaskConical, HeartPulse, ShieldAlert, User } from 'lucide-react'
-import type { AiAcuityLevel, AiConsultation, AiConsultationSource } from '@/types/aiConsultation'
+import { Activity, AlertTriangle, FlaskConical, HeartPulse, Plus, ShieldAlert, Stethoscope, User } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import type {
+  AiAcuityLevel,
+  AiConsultation,
+  AiConsultationSource,
+  AiDifferential,
+  AiDifferentialConfidence,
+} from '@/types/aiConsultation'
 
 // Styling and label per acuity level. Only NURSE_VITALS_ANALYSIS
 // consultations carry a level at all (see ai-service/rag/pipeline.py), so
@@ -10,6 +17,16 @@ export const ACUITY_STYLES: Record<AiAcuityLevel, { label: string; className: st
   STABLE: { label: 'Stable', className: 'border-green-300 bg-green-50 text-green-700' },
   URGENT: { label: 'Urgent', className: 'border-amber-300 bg-amber-50 text-amber-800' },
   CRITICAL: { label: 'Critical', className: 'border-red-300 bg-red-50 text-red-700' },
+}
+
+// Styling per differential-confidence level. Kept separate from
+// ACUITY_STYLES even though the color logic is similar, because these mean
+// different things — acuity is a single severity read for the whole
+// patient, this is "how well-supported is this one candidate diagnosis".
+export const DIFFERENTIAL_CONFIDENCE_STYLES: Record<AiDifferentialConfidence, { label: string; className: string }> = {
+  HIGH: { label: 'High confidence', className: 'border-blue-300 bg-blue-50 text-blue-700' },
+  MODERATE: { label: 'Moderate confidence', className: 'border-slate-300 bg-slate-50 text-slate-700' },
+  LOW: { label: 'Low confidence', className: 'border-slate-200 bg-slate-50 text-slate-500' },
 }
 
 // Who actually asked, and with what icon/color — shown on every
@@ -22,6 +39,11 @@ const SOURCE_LABELS: Record<AiConsultationSource, { label: string; icon: typeof 
   AUTO_VITALS: { label: 'Auto-suggested from vitals', icon: Activity, className: 'text-blue-700' },
   NURSE_VITALS_ANALYSIS: { label: "Nurse's vitals check", icon: HeartPulse, className: 'text-teal-700' },
   LABTECH_RESULT_ANALYSIS: { label: "Lab tech's result explanation", icon: FlaskConical, className: 'text-purple-700' },
+  DOCTOR_DIFFERENTIAL_DIAGNOSIS: {
+    label: "Doctor's differential diagnosis request",
+    icon: Stethoscope,
+    className: 'text-indigo-700',
+  },
 }
 
 // This is the read-only display block that shows a question, the AI's
@@ -30,7 +52,21 @@ const SOURCE_LABELS: Record<AiConsultationSource, { label: string; icon: typeof 
 // the Lab Tech's inline result explanation. It has no outer bordered box on
 // purpose, so each screen that uses it can wrap it in its own container to
 // match its own layout.
-export function AiResponseCard({ consultation, badge }: { consultation: AiConsultation; badge?: ReactNode }) {
+export function AiResponseCard({
+  consultation,
+  badge,
+  onAcceptDifferential,
+}: {
+  consultation: AiConsultation
+  badge?: ReactNode
+  // Only meaningful on a DOCTOR_DIFFERENTIAL_DIAGNOSIS consultation — every
+  // other source never sets response.differentials, so the "Add as
+  // diagnosis" button below never renders for them regardless of whether a
+  // caller passes this prop. Left undefined by every screen except the
+  // doctor's differential-diagnosis one, which is what keeps this otherwise
+  // read-only card free of mutation logic by default.
+  onAcceptDifferential?: (differential: AiDifferential) => void
+}) {
   const source = SOURCE_LABELS[consultation.source]
   return (
     <>
@@ -53,6 +89,38 @@ export function AiResponseCard({ consultation, badge }: { consultation: AiConsul
       <div className="rounded-md border border-border bg-white px-3 py-2 text-sm text-slate-900">
         "{consultation.query}"
       </div>
+      {consultation.response.differentials && consultation.response.differentials.length > 0 && (
+        <ol className="mt-3 space-y-2">
+          {consultation.response.differentials.map((differential, index) => (
+            <li key={`${differential.condition}-${index}`} className="rounded-md border border-border bg-white px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-900">
+                    {index + 1}. {differential.condition}
+                  </span>
+                  <span
+                    className={`rounded-full border px-2 py-0.5 text-[10px] font-medium ${DIFFERENTIAL_CONFIDENCE_STYLES[differential.confidence].className}`}
+                  >
+                    {DIFFERENTIAL_CONFIDENCE_STYLES[differential.confidence].label}
+                  </span>
+                </div>
+                {onAcceptDifferential && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="border-blue-300 text-blue-700"
+                    onClick={() => onAcceptDifferential(differential)}
+                  >
+                    <Plus className="size-3.5" /> Add as diagnosis
+                  </Button>
+                )}
+              </div>
+              <p className="mt-1 text-xs text-slate-600">{differential.reasoning}</p>
+            </li>
+          ))}
+        </ol>
+      )}
       <div className="mt-3 space-y-2 text-sm leading-relaxed text-slate-700">
         {/* max-w-prose keeps each line of text at a readable length (about
             65 characters). Without it, this text would stretch to fill
