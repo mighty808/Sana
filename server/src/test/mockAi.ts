@@ -12,6 +12,7 @@ export interface FakeConsultResponse {
   ragMetadata?: { model?: string; retrievalCount?: number; responseTimeMs?: number }
   acuityLevel?: AiAcuityLevel
   acuityReasons?: string[]
+  differentials?: Array<{ condition: string; confidence: string; reasoning: string }>
 }
 
 // Exported so a test can assert this is a shape the real FastAPI service could
