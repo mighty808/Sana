@@ -103,6 +103,7 @@ def test_response_has_every_field_the_express_contract_expects(fake_store, fake_
         "ragMetadata",
         "acuityLevel",
         "acuityReasons",
+        "differentials",
     }
     assert result["diagnosticGuidance"] == "Guidance text."
     assert set(result["sources"][0]) == {"title", "excerpt", "score", "grounded"}
@@ -169,6 +170,7 @@ def test_a_plain_consult_carries_no_acuity(fake_store, fake_llm):
 
     assert result["acuityLevel"] is None
     assert result["acuityReasons"] is None
+    assert result["differentials"] is None
 
 
 def _acuity_json(level: str, reasons: list[str], guidance: str = "Guidance.") -> str:
@@ -271,6 +273,60 @@ def test_acuity_path_uses_the_acuity_system_prompt(fake_store, fake_llm):
 
     system_message = llm.calls[0][0]["content"]
     assert "JSON" in system_message
+
+
+def _differential_json(summary: str, differentials: list[dict]) -> str:
+    return json.dumps({"summary": summary, "differentials": differentials})
+
+
+def test_differential_path_returns_the_structured_read(fake_store, fake_llm):
+    fake_store([("Text.", "Ghana STG — Malaria", ABOVE)])
+    fake_llm(
+        _differential_json(
+            "Fever with chills points toward a few common causes.",
+            [{"condition": "Malaria", "confidence": "HIGH", "reasoning": "Fever and chills."}],
+        )
+    )
+
+    result = consult("What are the differentials?", {"chiefComplaint": "Fever"}, assess_differential=True)
+
+    assert result["diagnosticGuidance"] == "Fever with chills points toward a few common causes."
+    assert result["differentials"] == [{"condition": "Malaria", "confidence": "HIGH", "reasoning": "Fever and chills."}]
+    # Only the acuity path sets these — the differential path must leave them
+    # null, same as a plain consult does.
+    assert result["acuityLevel"] is None
+    assert result["acuityReasons"] is None
+
+
+def test_differential_path_uses_the_differential_system_prompt(fake_store, fake_llm):
+    fake_store([("Text.", "Ghana STG — Malaria", ABOVE)])
+    llm = fake_llm(_differential_json("...", []))
+
+    consult("What are the differentials?", {}, assess_differential=True)
+
+    system_message = llm.calls[0][0]["content"]
+    assert "JSON" in system_message
+    assert "differentials" in system_message
+
+
+def test_lab_results_are_included_in_the_prompt(fake_store, fake_llm):
+    fake_store([("Text.", "Ghana STG — Malaria", ABOVE)])
+    llm = fake_llm(_differential_json("...", []))
+
+    consult(
+        "What are the differentials?",
+        {
+            "chiefComplaint": "Fever",
+            "labResults": [
+                {"testName": "Malaria RDT", "resultValue": "Positive", "interpretation": "ABNORMAL"},
+            ],
+        },
+        assess_differential=True,
+    )
+
+    prompt = llm.last_user_prompt
+    assert "Malaria RDT" in prompt
+    assert "Positive" in prompt
 
 
 def test_response_time_is_recorded(fake_store, fake_llm):
