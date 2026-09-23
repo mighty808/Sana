@@ -40,6 +40,9 @@ interface ConsultResponse {
   // callAiService and analyzeVitalsForNurse below).
   acuityLevel?: AiAcuityLevel
   acuityReasons?: string[]
+  // Only set when the request was made with assessDifferential: true (see
+  // callAiService and suggestDifferentialDiagnosis below).
+  differentials?: Array<{ condition: string; confidence: string; reasoning: string }>
 }
 
 // Builds exactly what gets sent to the AI service — and just as
@@ -49,11 +52,40 @@ interface ConsultResponse {
 // and its VitalSign records; `symptoms` is whatever free text the doctor
 // typed in alongside their question. Nothing in here ever touches
 // Patient.firstName, lastName, phone, email, or patientNumber.
-async function buildAnonymizedContext(encounterId: string, symptoms?: string[]) {
+async function buildAnonymizedContext(
+  encounterId: string,
+  symptoms?: string[],
+  options: { includeLabResults?: boolean } = {},
+) {
   const encounter = await Encounter.findById(encounterId)
   if (!encounter) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
 
   const latestVitals = await VitalSign.findOne({ encounter: encounterId }).sort({ recordedAt: -1 })
+
+  // Only pulled in for the doctor's differential-diagnosis request — every
+  // other consult flow doesn't need it, and building it is two extra
+  // queries. Deliberately not filtered by status: 'RELEASED' — that field
+  // only gates when a result becomes visible to the *patient* (see
+  // LabResult.ts), while this context is for staff/the AI, who already see
+  // an ENTERED result on the encounter same as a RELEASED one.
+  let labResults: Array<{
+    testName: string
+    resultValue: string
+    unit?: string
+    referenceRange?: string
+    interpretation?: string
+  }> | undefined
+  if (options.includeLabResults) {
+    const orders = await LabOrder.find({ encounter: encounterId }).select('_id')
+    const results = await LabResult.find({ labOrder: { $in: orders.map((o) => o._id) } }).sort({ resultedAt: -1 })
+    labResults = results.map((r) => ({
+      testName: r.testName,
+      resultValue: r.resultValue,
+      unit: r.unit ?? undefined,
+      referenceRange: r.referenceRange ?? undefined,
+      interpretation: r.interpretation ?? undefined,
+    }))
+  }
 
   return {
     encounter,
@@ -70,6 +102,7 @@ async function buildAnonymizedContext(encounterId: string, symptoms?: string[]) 
           }
         : undefined,
       symptoms,
+      labResults,
     },
   }
 }
@@ -89,7 +122,7 @@ async function buildAnonymizedContext(encounterId: string, symptoms?: string[]) 
 async function callAiService(
   query: string,
   context: Record<string, unknown>,
-  assessAcuity = false,
+  options: { assessAcuity?: boolean; assessDifferential?: boolean } = {},
 ): Promise<{ response: ConsultResponse; responseTimeMs: number }> {
   const startedAt = Date.now()
   let aiResponse: ConsultResponse
@@ -104,7 +137,12 @@ async function callAiService(
         // "undefined" would fail against a service that has one set.
         ...(env.aiServiceToken ? { 'X-Sana-Token': env.aiServiceToken } : {}),
       },
-      body: JSON.stringify({ query, patientContext: context, assessAcuity }),
+      body: JSON.stringify({
+        query,
+        patientContext: context,
+        assessAcuity: options.assessAcuity ?? false,
+        assessDifferential: options.assessDifferential ?? false,
+      }),
       // Keeps a slow/hung AI service from holding the request open
       // indefinitely — 20s is generous for a RAG pipeline call but still
       // bounded, so the caller gets a definite "unavailable" instead of
@@ -164,6 +202,7 @@ async function persistConsultation(input: PersistConsultationInput) {
       // sets these (see getWardBoard's aggregation, which depends on that).
       acuityLevel: input.aiResponse.acuityLevel ?? undefined,
       acuityReasons: input.aiResponse.acuityReasons ?? undefined,
+      differentials: input.aiResponse.differentials ?? undefined,
     },
     ragMetadata: {
       model: input.aiResponse.ragMetadata?.model,
@@ -337,7 +376,9 @@ export async function analyzeVitalsForNurse(encounterId: string, nurseId: string
   // doctor-escalation notification, against a visit that's already been
   // completed and locked.
   assertEncounterOpen(encounter, 'analyze vitals on')
-  const { response: aiResponse, responseTimeMs } = await callAiService(NURSE_VITALS_QUERY, context, true)
+  const { response: aiResponse, responseTimeMs } = await callAiService(NURSE_VITALS_QUERY, context, {
+    assessAcuity: true,
+  })
 
   const { consultation, patientLabel } = await persistAndNotify(
     {
@@ -359,6 +400,52 @@ export async function analyzeVitalsForNurse(encounterId: string, nurseId: string
   }
 
   broadcastWardBoardChanged(encounterId)
+  return consultation
+}
+
+const DIFFERENTIAL_QUERY =
+  "Based on this patient's chief complaint, vitals, and lab results, what are the most likely differential diagnoses to consider?"
+
+// A doctor-only shortcut ('ai.consult', the same permission as the free-text
+// consult — no separate permission exists for this) that asks Sana AI for a
+// ranked list of differential diagnoses. Unlike the nurse's vitals analysis
+// or the doctor's own free-text consult, this pulls in the encounter's lab
+// results too (see buildAnonymizedContext's includeLabResults option) —
+// diagnosis reasoning needs that fuller picture. Same as every other Sana AI
+// feature, this never writes to the Diagnosis collection itself: the doctor
+// reviews the suggested differentials and, if one is useful, adds it as a
+// real Diagnosis by hand through the ordinary addDiagnosis flow.
+export async function suggestDifferentialDiagnosis(encounterId: string, doctorId: string, notes?: string) {
+  assertValidObjectId(encounterId, 'encounter')
+
+  // Same ownership pattern as consultAI — a doctor can only request
+  // differentials for their own encounter.
+  const owned = await Encounter.exists({ _id: encounterId, doctor: doctorId })
+  if (!owned) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
+
+  const { encounter, context } = await buildAnonymizedContext(encounterId, notes ? [notes] : undefined, {
+    includeLabResults: true,
+  })
+  assertEncounterOpen(encounter, 'suggest differential diagnoses on')
+  const { response: aiResponse, responseTimeMs } = await callAiService(DIFFERENTIAL_QUERY, context, {
+    assessDifferential: true,
+  })
+
+  const { consultation } = await persistAndNotify(
+    {
+      encounter: encounterId,
+      doctor: doctorId,
+      patient: encounter.patient.toString(),
+      requestedBy: doctorId,
+      query: DIFFERENTIAL_QUERY,
+      source: 'DOCTOR_DIFFERENTIAL_DIAGNOSIS',
+      context,
+      aiResponse,
+      responseTimeMs,
+    },
+    doctorId,
+  )
+
   return consultation
 }
 
