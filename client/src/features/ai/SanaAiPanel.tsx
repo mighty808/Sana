@@ -1,7 +1,7 @@
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Sparkles, User, Activity, HeartPulse, FlaskConical } from 'lucide-react'
+import { Sparkles, User, Activity, HeartPulse, FlaskConical, Stethoscope } from 'lucide-react'
 import { useAiConsultations, useConsultAi } from './api'
 import { useAiAction } from './useAiAction'
 import { CollapsibleConsultationGroup } from './ConsultationGroup'
@@ -23,13 +23,18 @@ type AskForm = z.infer<typeof askFormSchema>
 // is labeled/iconed. Doctor's own questions lead since this panel is the
 // doctor's own workspace; the rest follow in the order they'd typically
 // happen during a visit (nurse's vitals check, lab tech's result, then the
-// system's own auto-suggestion).
+// system's own auto-suggestion). DOCTOR_DIFFERENTIAL_DIAGNOSIS is
+// deliberately left out of GROUP_ORDER — it already has its own dedicated
+// history inside DoctorDifferentialDiagnosis (in EncounterPage.tsx), so
+// showing it here too would just duplicate it. It still needs an entry in
+// GROUP_LABELS below purely to satisfy the Record's exhaustive key type.
 const GROUP_ORDER: AiConsultationSource[] = ['MANUAL', 'NURSE_VITALS_ANALYSIS', 'LABTECH_RESULT_ANALYSIS', 'AUTO_VITALS']
 const GROUP_LABELS: Record<AiConsultationSource, { label: string; icon: typeof User; className: string }> = {
   MANUAL: { label: 'Doctor', icon: User, className: 'text-blue-700' },
   NURSE_VITALS_ANALYSIS: { label: 'Nurse', icon: HeartPulse, className: 'text-teal-700' },
   LABTECH_RESULT_ANALYSIS: { label: 'Lab Tech', icon: FlaskConical, className: 'text-purple-700' },
   AUTO_VITALS: { label: 'Auto-suggested', icon: Activity, className: 'text-blue-700' },
+  DOCTOR_DIFFERENTIAL_DIAGNOSIS: { label: 'Differential diagnosis', icon: Stethoscope, className: 'text-indigo-700' },
 }
 
 // This panel is for doctors only, and is shown inside the Encounter
