@@ -76,6 +76,26 @@ export function useAnalyzeVitals() {
   })
 }
 
+// Matches server/src/schemas/ai.ts's differentialDiagnosisSchema. This is
+// for doctors only — it requires 'ai.consult', the same permission as the
+// free-text consult, since no separate permission exists for this.
+export interface DifferentialDiagnosisInput {
+  encounter: string
+  notes?: string
+}
+
+export function useSuggestDifferentialDiagnosis() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (input: DifferentialDiagnosisInput) => {
+      const res = await api.post<ApiSuccess<AiConsultation>>('/ai/differential-diagnosis', input)
+      return res.data.data
+    },
+    onSuccess: (_data, variables) =>
+      queryClient.invalidateQueries({ queryKey: ['ai-consultations', variables.encounter] }),
+  })
+}
+
 // Matches server/src/schemas/ai.ts's explainLabResultSchema exactly — this
 // is for lab techs only (needs 'ai.explainLabResult', not the doctor-only
 // 'ai.consult'), and these are the only two fields the server accepts.
