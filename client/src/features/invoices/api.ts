@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ApiSuccess } from '@/lib/api'
-import type { Invoice, InvoiceDetail } from '@/types/invoice'
+import type { Invoice, InvoiceDetail, PatientInvoiceSummary } from '@/types/invoice'
 
 // This matches the shape expected by server/src/schemas/invoice.ts's createInvoiceSchema.
 // We don't send an `amount` for each item. The backend always works it out itself
@@ -30,6 +30,24 @@ export function useInvoices(page: number, limit: number) {
     queryKey: ['invoices', { page, limit }],
     queryFn: async () => {
       const res = await api.get<ApiSuccess<Invoice[]>>('/invoices', { params: { page, limit } })
+      return res.data.data
+    },
+    placeholderData: (prev) => prev,
+  })
+}
+
+// GET /invoices/patient-summary?page=&limit= — Admin-only. One row per
+// patient (invoice count, total owed) instead of a flat invoice list; this
+// is what InvoicesPage.tsx's admin view actually renders now. Same
+// "no total/page count, so figure out the last page from a short response"
+// pagination shape as useInvoices above.
+export function usePatientInvoiceSummaries(page: number, limit: number) {
+  return useQuery({
+    queryKey: ['invoices', 'patient-summary', { page, limit }],
+    queryFn: async () => {
+      const res = await api.get<ApiSuccess<PatientInvoiceSummary[]>>('/invoices/patient-summary', {
+        params: { page, limit },
+      })
       return res.data.data
     },
     placeholderData: (prev) => prev,
