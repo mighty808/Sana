@@ -41,13 +41,19 @@ interface CreateInvoiceInput {
   items: InvoiceItemInput[]
 }
 
-// Creates an invoice from exactly one billable thing — a lab order or a
-// prescription — one invoice per source, billing exactly its tests or
-// medications. `patient` and `encounter` are looked up from that source
-// document, not taken from whatever the caller sends, for the same reason
-// labOrder.service.ts's createLabOrder does the same thing: a bill always
-// belongs to whichever patient and encounter the thing it's billing
-// actually belongs to.
+// Bills one lab order or one prescription. `patient` and `encounter` are
+// looked up from that source document, not taken from whatever the caller
+// sends, for the same reason labOrder.service.ts's createLabOrder does the
+// same thing: a bill always belongs to whichever patient and encounter the
+// thing it's billing actually belongs to.
+//
+// The caller still only ever names one specific order/prescription — the
+// consolidation below (everything of the same kind on the same encounter
+// landing on one shared invoice) is a server-side decision, not something
+// the "Bill this order"/"Bill this prescription" buttons need to know
+// about. If an invoice for this encounter and this kind is still open
+// (UNPAID/PARTIALLY_PAID), this order/prescription's items are appended to
+// it; otherwise a fresh invoice is created, exactly as before.
 //
 // Each item's `amount` is calculated here as qty times unitPrice, rounded
 // to the nearest pesewa — it's never taken directly from the request
@@ -63,22 +69,17 @@ export async function createInvoice(input: CreateInvoiceInput) {
     throw new AppError('Provide exactly one of labOrder or prescription', 400, 'INVALID_INVOICE_SOURCE')
   }
 
-  // Everything that differs between the two billable sources — the
-  // friendly name used in error messages, the duplicate-invoice filter,
-  // and which of Invoice's two source fields gets set — is derived once
-  // here, at the one point that already has to branch on which source was
-  // given. Nothing below this branches on labOrder-vs-prescription again.
+  // Everything that differs between the two billable kinds — the friendly
+  // name used in error messages, and which of Invoice's two array fields
+  // this source belongs on — is derived once here, at the one point that
+  // already has to branch on which kind was given. Nothing below this
+  // branches on labOrder-vs-prescription again.
   const source = input.labOrder
     ? await (async () => {
         assertValidObjectId(input.labOrder!, 'labOrder')
         const labOrder = await LabOrder.findById(input.labOrder)
         if (!labOrder) throw new AppError('Lab order not found', 404, 'LAB_ORDER_NOT_FOUND')
-        return {
-          doc: labOrder,
-          label: 'lab order',
-          duplicateFilter: { labOrder: labOrder.id, isActive: true },
-          fields: { labOrder: labOrder.id as string | undefined, prescription: undefined as string | undefined },
-        }
+        return { doc: labOrder, label: 'lab order', arrayField: 'labOrders' as const, sourceId: labOrder.id as string }
       })()
     : await (async () => {
         assertValidObjectId(input.prescription!, 'prescription')
@@ -87,27 +88,59 @@ export async function createInvoice(input: CreateInvoiceInput) {
         return {
           doc: prescription,
           label: 'prescription',
-          duplicateFilter: { prescription: prescription.id, isActive: true },
-          fields: { labOrder: undefined as string | undefined, prescription: prescription.id as string | undefined },
+          arrayField: 'prescriptions' as const,
+          sourceId: prescription.id as string,
         }
       })()
 
-  // This check gives a friendlier, more specific error message in the
-  // normal case. On its own, though, it can't stop two requests arriving
-  // at the exact same time from both slipping past it — what actually
-  // prevents double-billing is the matching partial unique index on
-  // models/Invoice.ts, enforced by the database itself. The try/catch
-  // below handles the case where that race actually happens.
-  const existing = await Invoice.findOne(source.duplicateFilter)
-  if (existing) {
-    throw new AppError(`This ${source.label} already has an invoice (${existing.invoiceNumber})`, 409, 'INVOICE_ALREADY_EXISTS')
+  // This exact order/prescription can't appear on more than one invoice,
+  // whether or not the invoice it's already on is still open — otherwise
+  // the same medication could quietly get billed twice.
+  const alreadyBilled = await Invoice.findOne({ encounter: source.doc.encounter, [source.arrayField]: source.sourceId })
+  if (alreadyBilled) {
+    throw new AppError(
+      `This ${source.label} already has an invoice (${alreadyBilled.invoiceNumber})`,
+      409,
+      'INVOICE_ALREADY_EXISTS',
+    )
   }
 
   const items = input.items.map((item) => ({
     ...item,
     amount: roundMoney(item.qty * item.unitPrice),
   }))
-  const subtotal = roundMoney(items.reduce((sum, item) => sum + item.amount, 0))
+  const itemsTotal = roundMoney(items.reduce((sum, item) => sum + item.amount, 0))
+
+  // Is there already an invoice for this encounter, of this kind, still
+  // open for new line items? If so, this billing action extends it rather
+  // than starting a second invoice for the same visit.
+  const openInvoice = await Invoice.findOne({
+    encounter: source.doc.encounter,
+    isOpenForBilling: true,
+    [source.arrayField]: { $exists: true },
+  })
+
+  if (openInvoice) {
+    // `isOpenForBilling: true` repeated in the filter (not just relied on
+    // from the findOne above) so this can't append to an invoice that got
+    // paid in the narrow window between that check and this update.
+    const updated = await Invoice.findOneAndUpdate(
+      { _id: openInvoice._id, isOpenForBilling: true },
+      {
+        $push: { [source.arrayField]: source.sourceId, items: { $each: items } },
+        $inc: { subtotal: itemsTotal, total: itemsTotal, balance: itemsTotal },
+      },
+      { returnDocument: 'after' },
+    )
+    if (!updated) {
+      // The invoice was paid in that narrow window — same fail-safe spirit
+      // as the duplicate-key catch below: tell the caller to retry rather
+      // than silently doing nothing. Retrying will correctly fall into the
+      // "create a fresh invoice" branch below, since this one is now closed.
+      throw new AppError(`This ${source.label}'s invoice was just paid — try billing it again`, 409, 'INVOICE_ALREADY_EXISTS')
+    }
+    return updated
+  }
 
   const invoiceNumber = await generateId('INV')
 
@@ -125,23 +158,24 @@ export async function createInvoice(input: CreateInvoiceInput) {
       // every Invoice.encounter pointing at the old one, or this copy will
       // silently go stale.
       encounter: source.doc.encounter,
-      labOrder: source.fields.labOrder,
-      prescription: source.fields.prescription,
+      [source.arrayField]: [source.sourceId],
       items,
-      subtotal,
+      subtotal: itemsTotal,
       // There's no tax or discount handling yet, so the total is simply
       // equal to the subtotal.
-      total: subtotal,
+      total: itemsTotal,
       amountPaid: 0,
-      balance: subtotal,
+      balance: itemsTotal,
     })
   } catch (err) {
     // This is what closes the race the check above can't: if two requests
-    // for the same lab order/prescription both pass the findOne check
-    // before either one has written anything, the second create() call
-    // collides with the database's unique index and fails with a
-    // duplicate-key error. That gets turned into the same clean 409
-    // response the earlier check already gives in the normal, non-racing case.
+    // for two different orders/prescriptions on the same encounter both
+    // find no open invoice yet and both try to create the first one, the
+    // second create() call collides with the database's unique index and
+    // fails with a duplicate-key error. That gets turned into the same
+    // clean 409 response the earlier checks already give in the normal,
+    // non-racing case — retrying it will correctly append to the
+    // now-existing invoice instead.
     if (isDuplicateKeyError(err)) {
       throw new AppError(`This ${source.label} already has an invoice`, 409, 'INVOICE_ALREADY_EXISTS')
     }
@@ -173,20 +207,77 @@ export async function listInvoices(user: AuthedUser, opts: { page?: number; limi
   return Invoice.find().populate('patient').sort({ createdAt: -1 }).skip(skip).limit(limit)
 }
 
-// Fetches the invoice for a given lab order — there's at most one
-// non-voided invoice per order, enforced by a unique index on
-// models/Invoice.ts — or null if that order has no invoice yet. Admin and
-// Lab Tech can look up any lab order's invoice this way, the same as
-// getLabOrderById() in labOrder.service.ts lets them look up any order
-// directly by id: it's a direct lookup for an id the caller already has,
-// not a browsable list. A patient is different, though — a patient could
-// pass in any lab order id at all, so without a check here, they could
-// read a stranger's invoice. This enforces the same "only your own
+// One row per patient — invoice count and total outstanding balance —
+// instead of a flat chronological list. This is what the Admin's Invoices
+// page actually browses by now: a patient with several invoices (a lab
+// order's plus one or more prescriptions', all on the same encounter, as
+// with Kofi Patient) used to show as several same-named rows in a row;
+// this collapses that into one row per patient, and the page links each
+// one through to that patient's own Invoices tab (which still lists every
+// individual invoice) rather than trying to show them here too.
+//
+// An aggregation rather than "list every patient, then N+1 queries for
+// each one's invoices" — same reasoning as sumOutstandingBalance above.
+// Admin-only; enforced at the route level via the 'user.manage' permission
+// (the same permission the client already checks to decide whether it's
+// rendering the admin view of this page at all), not re-checked here.
+export async function listInvoiceSummariesByPatient(opts: { page?: number; limit?: number } = {}) {
+  const { skip, limit } = resolvePagination(opts)
+  return Invoice.aggregate([
+    {
+      $group: {
+        _id: '$patient',
+        invoiceCount: { $sum: 1 },
+        totalOwed: { $sum: '$balance' },
+        // Not returned to the client — only used to order patients by
+        // whoever has the most recent billing activity first, the same
+        // "newest first" feel the old flat list had.
+        lastActivity: { $max: '$createdAt' },
+      },
+    },
+    { $sort: { lastActivity: -1 } },
+    { $skip: skip },
+    { $limit: limit },
+    // $lookup rather than .populate() — this is a plain aggregate(), which
+    // doesn't go through Mongoose's document layer, so there's nothing for
+    // .populate() to hook into.
+    { $lookup: { from: 'patients', localField: '_id', foreignField: '_id', as: 'patient' } },
+    { $unwind: '$patient' },
+    {
+      $project: {
+        _id: 0,
+        patient: {
+          _id: '$patient._id',
+          firstName: '$patient.firstName',
+          lastName: '$patient.lastName',
+          patientNumber: '$patient.patientNumber',
+        },
+        invoiceCount: 1,
+        totalOwed: 1,
+      },
+    },
+  ])
+}
+
+// Fetches the invoice covering a given lab order — or null if that order
+// hasn't been billed yet. Since billing now consolidates every lab order
+// on an encounter onto one shared invoice (see createInvoice), this may be
+// the same invoice another lab order on the same encounter is also on;
+// `labOrders: labOrderId` matches a scalar against the array the same way
+// a singular-field query would, so this still answers exactly "has *this*
+// order been billed," independent of which invoice it landed in — which
+// is all the "Bill this order" button's `!invoice` check actually needs.
+// Admin and Lab Tech can look up any lab order's invoice this way, the
+// same as getLabOrderById() in labOrder.service.ts lets them look up any
+// order directly by id: it's a direct lookup for an id the caller already
+// has, not a browsable list. A patient is different, though — a patient
+// could pass in any lab order id at all, so without a check here, they
+// could read a stranger's invoice. This enforces the same "only your own
 // invoices" rule that getInvoiceById() and listInvoices() already apply
 // for a patient.
 export async function getInvoiceForLabOrder(labOrderId: string, user: AuthedUser) {
   assertValidObjectId(labOrderId, 'labOrder')
-  const invoice = await Invoice.findOne({ labOrder: labOrderId, isActive: true })
+  const invoice = await Invoice.findOne({ labOrders: labOrderId, isActive: true })
   if (!invoice) return null
 
   if (user.role.name === 'PATIENT') {
@@ -202,7 +293,7 @@ export async function getInvoiceForLabOrder(labOrderId: string, user: AuthedUser
 // disable "Bill this prescription" once it's already billed).
 export async function getInvoiceForPrescription(prescriptionId: string, user: AuthedUser) {
   assertValidObjectId(prescriptionId, 'prescription')
-  const invoice = await Invoice.findOne({ prescription: prescriptionId, isActive: true })
+  const invoice = await Invoice.findOne({ prescriptions: prescriptionId, isActive: true })
   if (!invoice) return null
 
   if (user.role.name === 'PATIENT') {
