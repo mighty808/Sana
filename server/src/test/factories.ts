@@ -198,18 +198,12 @@ export async function createAiConsultation(
 // validation createInvoice itself is responsible for; tests of that
 // validation call the real service function instead (see
 // invoice-billing.test.ts).
-export async function createTestInvoice(
-  patientId: string,
-  encounterId: string,
-  overrides: Partial<{ labOrder: string; prescription: string; total: number }> = {},
-) {
+export async function createTestInvoice(patientId: string, encounterId: string, overrides: Partial<{ total: number }> = {}) {
   const total = overrides.total ?? 100
   return Invoice.create({
     invoiceNumber: unique('INV'),
     patient: patientId,
     encounter: encounterId,
-    labOrder: overrides.labOrder,
-    prescription: overrides.prescription,
     items: [{ description: 'Test line item', qty: 1, unitPrice: total, amount: total }],
     subtotal: total,
     total,
