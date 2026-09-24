@@ -49,8 +49,8 @@ describe('createInvoice', () => {
       items: [{ description: 'CBC', qty: 1, unitPrice: 50 }],
     })
 
-    expect(invoice.labOrder?.toString()).toBe(order.id)
-    expect(invoice.prescription).toBeUndefined()
+    expect(invoice.labOrders?.map(String)).toEqual([order.id])
+    expect(invoice.prescriptions).toBeUndefined()
     expect(invoice.subtotal).toBe(50)
     expect(invoice.total).toBe(50)
     expect(invoice.balance).toBe(50)
@@ -68,8 +68,8 @@ describe('createInvoice', () => {
       items: [{ description: 'Amoxicillin (500mg)', qty: 2, unitPrice: 50 }],
     })
 
-    expect(invoice.prescription?.toString()).toBe(rx.id)
-    expect(invoice.labOrder).toBeUndefined()
+    expect(invoice.prescriptions?.map(String)).toEqual([rx.id])
+    expect(invoice.labOrders).toBeUndefined()
     expect(invoice.subtotal).toBe(100)
   })
 
@@ -142,7 +142,26 @@ describe('createInvoice', () => {
     expect(invoiceForOrder.id).not.toBe(invoiceForRx.id)
   })
 
-  test('a second lab order for the same patient can still be billed independently', async () => {
+  test('a lab order on a different encounter is billed independently, never merged in', async () => {
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounterA = await createEncounter(doctor.id, patient.id)
+    const encounterB = await createEncounter(doctor.id, patient.id)
+    const orderA = await createTestLabOrder(doctor.id, patient.id, encounterA.id)
+    const orderB = await createTestLabOrder(doctor.id, patient.id, encounterB.id)
+
+    const invoiceA = await createInvoice({ labOrder: orderA.id, items: [{ description: 'CBC', qty: 1, unitPrice: 50 }] })
+    const invoiceB = await createInvoice({ labOrder: orderB.id, items: [{ description: 'CBC', qty: 1, unitPrice: 50 }] })
+
+    expect(invoiceA.id).not.toBe(invoiceB.id)
+  })
+
+  // The actual consolidation behaviour this file exists to cover now:
+  // every lab order on the SAME encounter lands on one shared invoice
+  // instead of getting its own. This is what fixed the real-world case
+  // that prompted it — a patient with two prescriptions on one visit was
+  // getting two separate invoices instead of one combined bill.
+  test('two lab orders on the same encounter consolidate onto one shared invoice', async () => {
     const doctor = await createUser('DOCTOR')
     const patient = await createPatient()
     const encounter = await createEncounter(doctor.id, patient.id)
@@ -150,8 +169,36 @@ describe('createInvoice', () => {
     const orderB = await createTestLabOrder(doctor.id, patient.id, encounter.id)
 
     const invoiceA = await createInvoice({ labOrder: orderA.id, items: [{ description: 'CBC', qty: 1, unitPrice: 50 }] })
-    const invoiceB = await createInvoice({ labOrder: orderB.id, items: [{ description: 'CBC', qty: 1, unitPrice: 50 }] })
+    const invoiceB = await createInvoice({ labOrder: orderB.id, items: [{ description: 'Malaria RDT', qty: 1, unitPrice: 30 }] })
 
-    expect(invoiceA.id).not.toBe(invoiceB.id)
+    expect(invoiceB.id).toBe(invoiceA.id)
+    expect(invoiceB.labOrders?.map(String).sort()).toEqual([orderA.id, orderB.id].sort())
+    expect(invoiceB.items.map((i) => i.description)).toEqual(['CBC', 'Malaria RDT'])
+    expect(invoiceB.subtotal).toBe(80)
+    expect(invoiceB.total).toBe(80)
+    expect(invoiceB.balance).toBe(80)
+  })
+
+  // Mirrors the lab-order consolidation test above, for prescriptions —
+  // this is the exact scenario the request was about.
+  test('two prescriptions on the same encounter consolidate onto one shared invoice', async () => {
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    const rxA = await createTestPrescription(doctor.id, patient.id, encounter.id)
+    const rxB = await createTestPrescription(doctor.id, patient.id, encounter.id)
+
+    const invoiceA = await createInvoice({ prescription: rxA.id, items: [{ description: 'Amoxicillin', qty: 1, unitPrice: 50 }] })
+    const invoiceB = await createInvoice({ prescription: rxB.id, items: [{ description: 'Paracetamol', qty: 1, unitPrice: 10 }] })
+
+    expect(invoiceB.id).toBe(invoiceA.id)
+    expect(invoiceB.prescriptions?.map(String).sort()).toEqual([rxA.id, rxB.id].sort())
+    expect(invoiceB.subtotal).toBe(60)
   })
 })
+
+// The "billing after the encounter's lab invoice is already fully paid
+// starts a new invoice" case lives in invoice-payment.test.ts instead of
+// here — it needs recordPayment's real MongoDB transaction, which requires
+// the replica-set test DB this file deliberately doesn't use (see this
+// file's own header comment).
