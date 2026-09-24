@@ -66,6 +66,13 @@ export async function recordPayment(input: CreatePaymentInput, receivedBy: strin
               },
             },
           },
+          // A third stage, after `status` above has already been computed
+          // from this same update — models/Invoice.ts's isOpenForBilling
+          // comment explains why this exists: it's what lets a PAID
+          // invoice's encounter get a fresh invoice of the same kind
+          // later, instead of the encounter being permanently blocked
+          // from billing again once its first invoice is settled.
+          { $set: { isOpenForBilling: { $in: ['$status', ['UNPAID', 'PARTIALLY_PAID']] } } },
         ],
         // Mongoose requires `updatePipeline: true` whenever the update
         // argument is an array like this one, or it rejects the call
