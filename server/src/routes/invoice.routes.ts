@@ -74,6 +74,31 @@ router.get('/', auth, requirePermission('invoice.read'), ctrl.list)
 
 /**
  * @openapi
+ * /invoices/patient-summary:
+ *   get:
+ *     summary: List patients with an invoice count and total owed (Admin only)
+ *     tags: [Billing]
+ *     description: >
+ *       One row per patient — invoice count and total outstanding balance
+ *       — sorted by most recent billing activity first. This is what the
+ *       Admin's Invoices page browses by; click through to a patient's own
+ *       Invoices tab (GET via the patient timeline) to see every individual
+ *       invoice.
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *     responses:
+ *       200:
+ *         description: List of { patient, invoiceCount, totalOwed }.
+ */
+router.get('/patient-summary', auth, requirePermission('user.manage'), ctrl.patientSummary)
+
+/**
+ * @openapi
  * /invoices/{id}:
  *   get:
  *     summary: Get an invoice with its payment history
