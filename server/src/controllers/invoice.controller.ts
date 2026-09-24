@@ -40,6 +40,18 @@ export async function list(req: Request, res: Response) {
   return ok(res, invoices)
 }
 
+// GET /invoices/patient-summary?page=&limit= — requires 'user.manage'
+// (Admin only). One row per patient (invoice count, total owed) instead
+// of a flat invoice list — see listInvoiceSummariesByPatient().
+export async function patientSummary(req: Request, res: Response) {
+  const { page, limit } = req.query
+  const summaries = await invoiceService.listInvoiceSummariesByPatient({
+    page: page ? Number(page) : undefined,
+    limit: limit ? Number(limit) : undefined,
+  })
+  return ok(res, summaries)
+}
+
 // GET /invoices/:id — requires 'invoice.read'.
 export async function getById(req: Request, res: Response) {
   const result = await invoiceService.getInvoiceById(req.params.id as string, req.user!)
