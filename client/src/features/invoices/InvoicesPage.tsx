@@ -6,13 +6,12 @@ import { z } from 'zod'
 import { Receipt, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/useAuth'
-import { useInvoices, useCreateInvoice } from './api'
+import { useInvoices, usePatientInvoiceSummaries, useCreateInvoice } from './api'
 import { useLabOrders } from '@/features/labOrders/api'
 import { usePrescriptions } from '@/features/prescriptions/api'
 import type { LabOrder } from '@/types/labOrder'
 import type { Prescription } from '@/types/prescription'
 import { getApiErrorMessage } from '@/lib/api'
-import { isPopulated } from '@/lib/utils'
 import { formatMoney, STANDARD_LAB_TEST_FEE, STANDARD_MEDICATION_FEE } from '@/lib/money'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -415,110 +414,167 @@ function CreateInvoiceDialog() {
   )
 }
 
-export function InvoicesPage() {
+// Admin's view of the page: one row per patient (invoice count, total
+// owed) rather than a flat invoice list — clicking a patient goes to their
+// own Invoices tab (see PatientDetailPage.tsx's ?tab= support), which is
+// where every individual invoice actually lives now.
+function PatientSummaryTable() {
   const navigate = useNavigate()
-  const { hasPermission } = useAuth()
   const [page, setPage] = useState(1)
-  const { data: invoices, isLoading } = useInvoices(page, PAGE_SIZE)
+  const { data: summaries, isLoading } = usePatientInvoiceSummaries(page, PAGE_SIZE)
+  const hasNextPage = (summaries?.length ?? 0) === PAGE_SIZE
+
+  return (
+    <div className="rounded-lg border border-border bg-card shadow-sm">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-50 hover:bg-slate-50">
+            <TableHead>Patient</TableHead>
+            <TableHead>Invoices</TableHead>
+            <TableHead>Owed</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {isLoading &&
+            Array.from({ length: 6 }).map((_, i) => (
+              <TableRow key={i}>
+                {Array.from({ length: 3 }).map((__, j) => (
+                  <TableCell key={j}>
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+
+          {!isLoading &&
+            summaries?.map(({ patient, invoiceCount, totalOwed }) => (
+              <TableRow
+                key={patient._id}
+                tabIndex={0}
+                role="link"
+                className="cursor-pointer focus-visible:bg-blue-50 focus-visible:outline-none"
+                onClick={() => navigate(`/patients/${patient._id}?tab=invoices`)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    navigate(`/patients/${patient._id}?tab=invoices`)
+                  }
+                }}
+              >
+                <TableCell className="font-medium text-slate-900">
+                  {patient.firstName} {patient.lastName}
+                </TableCell>
+                <TableCell className="tabular-nums text-slate-700">{invoiceCount}</TableCell>
+                <TableCell className="tabular-nums text-slate-700">{formatMoney(totalOwed)}</TableCell>
+              </TableRow>
+            ))}
+        </TableBody>
+      </Table>
+
+      {!isLoading && summaries?.length === 0 && (
+        <EmptyState icon={Receipt} title="No invoices yet" description="Invoices generated from encounters will show up here." />
+      )}
+
+      {!isLoading && summaries && summaries.length > 0 && (
+        <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+            <ChevronLeft className="size-4" /> Prev
+          </Button>
+          <Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage((p) => p + 1)}>
+            Next <ChevronRight className="size-4" />
+          </Button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// A Patient's own view: their own invoices, flat — there's only ever one
+// patient in this list (themselves), so grouping/summarizing by patient
+// would be pointless. Never paginated server-side either (see
+// invoice.service.ts's listInvoices) — a Patient just doesn't have enough
+// invoices for that to matter.
+function OwnInvoicesTable() {
+  const navigate = useNavigate()
+  const { data: invoices, isLoading } = useInvoices(1, PAGE_SIZE)
+
+  return (
+    <div className="rounded-lg border border-border bg-card shadow-sm">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-50 hover:bg-slate-50">
+            <TableHead>Invoice</TableHead>
+            <TableHead>Total</TableHead>
+            <TableHead>Balance</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {isLoading &&
+            Array.from({ length: 6 }).map((_, i) => (
+              <TableRow key={i}>
+                {Array.from({ length: 4 }).map((__, j) => (
+                  <TableCell key={j}>
+                    <Skeleton className="h-4 w-20" />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))}
+
+          {!isLoading &&
+            invoices?.map((invoice) => (
+              <TableRow
+                key={invoice._id}
+                tabIndex={0}
+                role="link"
+                className="cursor-pointer focus-visible:bg-blue-50 focus-visible:outline-none"
+                onClick={() => navigate(`/invoices/${invoice._id}`)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    navigate(`/invoices/${invoice._id}`)
+                  }
+                }}
+              >
+                <TableCell className="font-mono text-xs text-slate-600">{invoice.invoiceNumber}</TableCell>
+                <TableCell className="tabular-nums text-slate-700">{formatMoney(invoice.total)}</TableCell>
+                <TableCell className="tabular-nums text-slate-700">{formatMoney(invoice.balance)}</TableCell>
+                <TableCell>
+                  <StatusBadge status={invoice.status} />
+                </TableCell>
+              </TableRow>
+            ))}
+        </TableBody>
+      </Table>
+
+      {!isLoading && invoices?.length === 0 && (
+        <EmptyState icon={Receipt} title="No invoices yet" description="Invoices generated from encounters will show up here." />
+      )}
+    </div>
+  )
+}
+
+export function InvoicesPage() {
+  const { hasPermission } = useAuth()
   const canCreate = hasPermission('invoice.create')
-  // Only an Admin's call to listInvoices() actually returns the full list of every
-  // invoice (a Lab Tech's call returns nothing here, since they bill individual
-  // orders from the Lab Order dialog instead of this page, and a Patient only sees
-  // their own invoices). This is checked separately from `canCreate`, because both
-  // Admin and Lab Tech are allowed to create invoices, but only an Admin should see
-  // the full-ledger wording and columns above what would otherwise be an empty table
-  // for a Lab Tech. Checked via the 'user.manage' permission (Admin-exclusive, see
-  // types/permissions.ts) rather than the role name directly, so this stays
-  // correct if a future role's permissions ever change without also touching this page.
+  // Only an Admin gets the patient-summary view — a Lab Tech/Pharmacist
+  // never lands on this page browsing (they bill individual orders/
+  // prescriptions from their own queues instead), and a Patient only ever
+  // sees their own invoices anyway, so grouping by patient would be
+  // pointless for them. Checked via the 'user.manage' permission (Admin-
+  // exclusive, see types/permissions.ts) rather than the role name
+  // directly, so this stays correct if a future role's permissions ever
+  // change without also touching this page.
   const isAdmin = hasPermission('user.manage')
-  const hasNextPage = (invoices?.length ?? 0) === PAGE_SIZE
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-600">{isAdmin ? 'Every invoice in the system.' : 'Your invoices.'}</p>
+        <p className="text-sm text-slate-600">{isAdmin ? 'Every patient with an invoice.' : 'Your invoices.'}</p>
         {canCreate && <CreateInvoiceDialog />}
       </div>
 
-      <div className="rounded-lg border border-border bg-card shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-slate-50 hover:bg-slate-50">
-              <TableHead>Invoice</TableHead>
-              {isAdmin && (
-                <TableHead>Patient</TableHead>
-              )}
-              <TableHead>Total</TableHead>
-              <TableHead>Balance</TableHead>
-              <TableHead>Status</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading &&
-              Array.from({ length: 6 }).map((_, i) => (
-                <TableRow key={i}>
-                  {Array.from({ length: isAdmin ? 5 : 4 }).map((__, j) => (
-                    <TableCell key={j}>
-                      <Skeleton className="h-4 w-20" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-
-            {!isLoading &&
-              invoices?.map((invoice) => (
-                <TableRow
-                  key={invoice._id}
-                  tabIndex={0}
-                  role="link"
-                  className="cursor-pointer focus-visible:bg-blue-50 focus-visible:outline-none"
-                  onClick={() => navigate(`/invoices/${invoice._id}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      navigate(`/invoices/${invoice._id}`)
-                    }
-                  }}
-                >
-                  <TableCell className="font-mono text-xs text-slate-600">{invoice.invoiceNumber}</TableCell>
-                  {isAdmin && (
-                    <TableCell className="font-medium text-slate-900">
-                      {isPopulated(invoice.patient) ? `${invoice.patient.firstName} ${invoice.patient.lastName}` : '—'}
-                    </TableCell>
-                  )}
-                  <TableCell className="tabular-nums text-slate-700">{formatMoney(invoice.total)}</TableCell>
-                  <TableCell className="tabular-nums text-slate-700">{formatMoney(invoice.balance)}</TableCell>
-                  <TableCell>
-                    <StatusBadge status={invoice.status} />
-                  </TableCell>
-                </TableRow>
-              ))}
-          </TableBody>
-        </Table>
-
-        {!isLoading && invoices?.length === 0 && (
-          <EmptyState icon={Receipt} title="No invoices yet" description="Invoices generated from encounters will show up here." />
-        )}
-
-        {/* Pagination controls only show for an Admin. When listInvoices() runs for
-             a Patient, it never actually splits their invoices into pages on the
-             server, so a Patient always gets their complete list back in a single
-             response no matter what page or limit is requested. Showing Prev/Next
-             buttons to them would be misleading, since it would look like there
-             are more pages when there aren't, and could even look broken if they
-             happen to have exactly PAGE_SIZE invoices (the "is there a next page"
-             check below can't tell that apart from there actually being a page 2). */}
-        {!isLoading && isAdmin && invoices && invoices.length > 0 && (
-          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-              <ChevronLeft className="size-4" /> Prev
-            </Button>
-            <Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage((p) => p + 1)}>
-              Next <ChevronRight className="size-4" />
-            </Button>
-          </div>
-        )}
-      </div>
+      {isAdmin ? <PatientSummaryTable /> : <OwnInvoicesTable />}
     </div>
   )
 }
