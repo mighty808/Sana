@@ -1,11 +1,12 @@
+import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Sparkles, User, Activity, HeartPulse, FlaskConical, Stethoscope } from 'lucide-react'
-import { useAiConsultations, useConsultAi } from './api'
+import { useAiConsultations, useConsultAi, useSuggestDifferentialDiagnosis } from './api'
 import { useAiAction } from './useAiAction'
 import { CollapsibleConsultationGroup } from './ConsultationGroup'
-import type { AiConsultationSource } from '@/types/aiConsultation'
+import type { AiConsultationSource, AiDifferential } from '@/types/aiConsultation'
 import { AiUnavailableBanner } from '@/components/AiUnavailableBanner'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -19,16 +20,20 @@ const askFormSchema = z.object({
 })
 type AskForm = z.infer<typeof askFormSchema>
 
-// Which role's questions show first, and how that role's dropdown header
-// is labeled/iconed. Doctor's own questions lead since this panel is the
-// doctor's own workspace; the rest follow in the order they'd typically
-// happen during a visit (nurse's vitals check, lab tech's result, then the
-// system's own auto-suggestion). DOCTOR_DIFFERENTIAL_DIAGNOSIS is
-// deliberately left out of GROUP_ORDER — it already has its own dedicated
-// history inside DoctorDifferentialDiagnosis (in EncounterPage.tsx), so
-// showing it here too would just duplicate it. It still needs an entry in
-// GROUP_LABELS below purely to satisfy the Record's exhaustive key type.
-const GROUP_ORDER: AiConsultationSource[] = ['MANUAL', 'NURSE_VITALS_ANALYSIS', 'LABTECH_RESULT_ANALYSIS', 'AUTO_VITALS']
+// Which role's questions show first, and how that role's dropdown header is
+// labeled/iconed. Doctor's own questions lead since this panel is the
+// doctor's own workspace, with the differential-diagnosis suggestions right
+// after them — also doctor-initiated, and the more clinically load-bearing
+// of the two doctor actions this panel now offers. The rest follow in the
+// order they'd typically happen during a visit (nurse's vitals check, lab
+// tech's result, then the system's own auto-suggestion).
+const GROUP_ORDER: AiConsultationSource[] = [
+  'MANUAL',
+  'DOCTOR_DIFFERENTIAL_DIAGNOSIS',
+  'NURSE_VITALS_ANALYSIS',
+  'LABTECH_RESULT_ANALYSIS',
+  'AUTO_VITALS',
+]
 const GROUP_LABELS: Record<AiConsultationSource, { label: string; icon: typeof User; className: string }> = {
   MANUAL: { label: 'Doctor', icon: User, className: 'text-blue-700' },
   NURSE_VITALS_ANALYSIS: { label: 'Nurse', icon: HeartPulse, className: 'text-teal-700' },
@@ -43,7 +48,25 @@ const GROUP_LABELS: Record<AiConsultationSource, { label: string; icon: typeof U
 // Diagnosis entry separately (see encounter.service.ts's addDiagnosis). This
 // panel just keeps a record of the question that was asked, the AI's
 // answer, and how the doctor judged that answer afterward.
-export function SanaAiPanel({ encounterId }: { encounterId: string }) {
+//
+// Two distinct actions live here: a free-text question (any clinical
+// question, vitals-only context) and a fixed "suggest differential
+// diagnoses" request (lab results included too — see
+// ai.service.ts's suggestDifferentialDiagnosis). They're separate mutations
+// with separate useAiAction instances so a 503 on one doesn't block or
+// mislabel the other, but they share one consultation history feed below.
+// `onAcceptDifferential` is only ever populated on a
+// DOCTOR_DIFFERENTIAL_DIAGNOSIS consultation's response — see
+// AiResponseCard's own comment on this prop — and is threaded down to
+// prefill EncounterPage's AddDiagnosisForm; Sana AI still never writes to
+// the clinical record on its own.
+export function SanaAiPanel({
+  encounterId,
+  onAcceptDifferential,
+}: {
+  encounterId: string
+  onAcceptDifferential?: (differential: AiDifferential) => void
+}) {
   const { data: consultations, isLoading } = useAiConsultations(encounterId)
   const consultAi = useConsultAi(encounterId)
   // A 503 response here is a normal, expected outcome, not a generic error.
@@ -53,6 +76,16 @@ export function SanaAiPanel({ encounterId }: { encounterId: string }) {
   // `unavailable` state) instead of a toast message that would disappear
   // before a doctor mid-consultation even notices it.
   const { unavailable, run } = useAiAction(consultAi.mutateAsync)
+
+  const suggestDifferential = useSuggestDifferentialDiagnosis()
+  const { unavailable: differentialUnavailable, run: runDifferential } = useAiAction(suggestDifferential.mutateAsync)
+  const [differentialNotes, setDifferentialNotes] = useState('')
+  // Forces the differential-diagnosis history group open right after a
+  // fresh suggestion comes in, same as every other group's default-closed
+  // dropdown otherwise leaves it. Every other group in GROUP_ORDER stays
+  // uncontrolled (manages its own open state) — only this one is ever
+  // passed `open`/`onOpenChange` below.
+  const [differentialHistoryOpen, setDifferentialHistoryOpen] = useState(false)
 
   const form = useForm<AskForm>({ resolver: zodResolver(askFormSchema), defaultValues: { query: '', symptoms: '' } })
 
@@ -64,11 +97,16 @@ export function SanaAiPanel({ encounterId }: { encounterId: string }) {
     if (result) form.reset({ query: '', symptoms: '' })
   }
 
+  async function handleSuggestDifferential() {
+    const result = await runDifferential({ encounter: encounterId, notes: differentialNotes || undefined })
+    if (result) setDifferentialHistoryOpen(true)
+  }
+
   return (
     <Card className="border-blue-200 bg-blue-50/30">
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-base">
-          <Sparkles className="size-4 text-blue-600" /> Sana AI
+          <Sparkles className="size-4 text-blue-600" /> Sana Differential Decision Tool
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -79,6 +117,7 @@ export function SanaAiPanel({ encounterId }: { encounterId: string }) {
             {GROUP_ORDER.map((source) => {
               const items = consultations.filter((c) => c.source === source)
               const group = GROUP_LABELS[source]
+              const isDifferential = source === 'DOCTOR_DIFFERENTIAL_DIAGNOSIS'
               return (
                 items.length > 0 && (
                   <CollapsibleConsultationGroup
@@ -88,15 +127,15 @@ export function SanaAiPanel({ encounterId }: { encounterId: string }) {
                     iconClassName={group.className}
                     items={items}
                     encounterId={encounterId}
+                    onAcceptDifferential={onAcceptDifferential}
+                    {...(isDifferential
+                      ? { open: differentialHistoryOpen, onOpenChange: setDifferentialHistoryOpen }
+                      : {})}
                   />
                 )
               )
             })}
           </div>
-        )}
-
-        {unavailable && (
-          <AiUnavailableBanner message="Sana AI is currently unavailable. Continue the consultation manually — this doesn't affect anything else in the record." />
         )}
 
         <Form {...form}>
@@ -134,11 +173,34 @@ export function SanaAiPanel({ encounterId }: { encounterId: string }) {
                 </FormItem>
               )}
             />
+            {unavailable && (
+              <AiUnavailableBanner message="Sana AI is currently unavailable. Continue the consultation manually — this doesn't affect anything else in the record." />
+            )}
             <Button type="submit" size="sm" disabled={consultAi.isPending}>
               <Sparkles className="size-3.5" /> {consultAi.isPending ? 'Analyzing…' : 'Ask Sana AI'}
             </Button>
           </form>
         </Form>
+
+        <div className="space-y-2 border-t border-blue-200 pt-4">
+          <Textarea
+            rows={1}
+            placeholder="Optional notes to include (optional)…"
+            value={differentialNotes}
+            onChange={(e) => setDifferentialNotes(e.target.value)}
+            className="min-h-9 bg-white text-xs"
+          />
+          {differentialUnavailable && <AiUnavailableBanner />}
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={suggestDifferential.isPending}
+            onClick={handleSuggestDifferential}
+          >
+            <Stethoscope className="size-3.5" /> {suggestDifferential.isPending ? 'Thinking…' : 'Suggest differential diagnoses'}
+          </Button>
+        </div>
       </CardContent>
     </Card>
   )
