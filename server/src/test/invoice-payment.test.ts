@@ -280,3 +280,26 @@ describe('recordPayment', () => {
     expect(payments[0]?.reference).toBe('POL-1')
   })
 })
+
+// Lives here rather than in invoice-billing.test.ts because it needs a
+// real recordPayment (a real MongoDB transaction), which requires this
+// file's replica-set test DB — see the file header comment.
+describe('createInvoice — billing again after the encounter\'s invoice is already settled', () => {
+  test('a lab order billed after its encounter\'s lab invoice is fully paid starts a new invoice, not an append', async () => {
+    const doctor = await createUser('DOCTOR')
+    const admin = await createUser('ADMIN')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    const orderA = await createLabOrder(doctor.id, patient.id, encounter.id)
+
+    const invoiceA = await createInvoice({ labOrder: orderA.id, items: [{ description: 'CBC', qty: 1, unitPrice: 50 }] })
+    await recordPayment({ invoice: invoiceA.id, amount: 50, method: 'CASH' }, admin.id)
+
+    const orderB = await createLabOrder(doctor.id, patient.id, encounter.id)
+    const invoiceB = await createInvoice({ labOrder: orderB.id, items: [{ description: 'Malaria RDT', qty: 1, unitPrice: 30 }] })
+
+    expect(invoiceB.id).not.toBe(invoiceA.id)
+    expect(invoiceB.labOrders?.map(String)).toEqual([orderB.id])
+    expect(invoiceB.balance).toBe(30)
+  })
+})
