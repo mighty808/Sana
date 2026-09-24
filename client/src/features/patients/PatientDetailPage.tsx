@@ -1,4 +1,4 @@
-import { useParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router-dom'
 import { ArrowLeft, Phone, Mail, Droplet, ClipboardPlus, FlaskConical, Receipt, ArrowUpRight, Pill } from 'lucide-react'
 import { usePatientTimeline } from './api'
 import { Card, CardContent } from '@/components/ui/card'
@@ -19,6 +19,17 @@ export function PatientDetailPage() {
   // network request for data this call already provides.
   const { data: timeline, isLoading } = usePatientTimeline(id)
   const patient = timeline?.patient
+  // Lets a caller deep-link straight to a specific tab — e.g. the Invoices
+  // page's per-patient group header links to `?tab=invoices` so an admin
+  // clicking a patient's name lands on their full invoice history instead
+  // of the Encounters tab. Falls back to 'encounters' for anything absent
+  // or not one of the four real tab values, rather than trusting an
+  // arbitrary query string straight into Tabs' defaultValue.
+  const [searchParams] = useSearchParams()
+  const requestedTab = searchParams.get('tab')
+  const initialTab = ['encounters', 'labs', 'prescriptions', 'invoices'].includes(requestedTab ?? '')
+    ? requestedTab!
+    : 'encounters'
 
   if (isLoading) {
     return (
@@ -96,7 +107,7 @@ export function PatientDetailPage() {
            tabs — the patient's full clinical + billing timeline, all
            sourced from the one usePatientTimeline() call above rather than
            a separate fetch per tab. ---------- */}
-      <Tabs defaultValue="encounters">
+      <Tabs defaultValue={initialTab}>
         <TabsList>
           <TabsTrigger value="encounters">Encounters</TabsTrigger>
           <TabsTrigger value="labs">Lab Results</TabsTrigger>
