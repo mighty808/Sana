@@ -5,7 +5,7 @@
 // by having the client send `null` to mean "clear," `undefined`/omitted to
 // mean "leave alone." Previously verified only by a throwaway script
 // against the real database, run once and deleted.
-import { addVitals, updateVitals, assertEncounterOpen } from '../services/encounter.service.js'
+import { addVitals, updateVitals, deleteVitals, assertEncounterOpen } from '../services/encounter.service.js'
 import { VitalSign } from '../models/VitalSign.js'
 import { AppError } from '../utils/apiResponse.js'
 import { connectTestDb, clearTestDb, disconnectTestDb, DB_BOOT_TIMEOUT_MS } from './setupTestDb.js'
@@ -62,6 +62,45 @@ describe('updateVitals', () => {
     await expect(updateVitals(encounter.id, vitals.id, { temperature: 37 })).rejects.toMatchObject({
       status: 409,
     } satisfies Partial<AppError>)
+  })
+})
+
+describe('deleteVitals', () => {
+  test('removes a vitals entry recorded in error', async () => {
+    const doctor = await createUser('DOCTOR')
+    const nurse = await createUser('NURSE')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    const vitals = await addVitals(encounter.id, nurse.id, { temperature: 38.5 })
+
+    await deleteVitals(encounter.id, vitals.id)
+    expect(await VitalSign.findById(vitals.id)).toBeNull()
+  })
+
+  test('rejects deletion once the encounter is COMPLETED', async () => {
+    const doctor = await createUser('DOCTOR')
+    const nurse = await createUser('NURSE')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    const vitals = await addVitals(encounter.id, nurse.id, { temperature: 38.5 })
+
+    encounter.status = 'COMPLETED'
+    await encounter.save()
+
+    await expect(deleteVitals(encounter.id, vitals.id)).rejects.toMatchObject({
+      status: 409,
+    } satisfies Partial<AppError>)
+  })
+
+  test('a nonexistent vitals id reports 404', async () => {
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+
+    await expect(deleteVitals(encounter.id, '507f1f77bcf86cd799439011')).rejects.toMatchObject({
+      status: 404,
+      code: 'VITALS_NOT_FOUND',
+    })
   })
 })
 
