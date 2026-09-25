@@ -62,6 +62,13 @@ class FakeLLM:
         """The most recent user-role message content."""
         return next(m["content"] for m in reversed(self.calls[-1]) if m["role"] == "user")
 
+    @property
+    def last_system_prompt(self) -> str:
+        """The most recent system-role message content — which of
+        SYSTEM_PROMPT/DIRECT_SYSTEM_PROMPT/ACUITY_SYSTEM_PROMPT/
+        DIFFERENTIAL_SYSTEM_PROMPT the pipeline actually chose."""
+        return next(m["content"] for m in reversed(self.calls[-1]) if m["role"] == "system")
+
 
 class FakeDocument:
     """Mirrors the two attributes the pipeline reads off a LangChain Document."""
@@ -79,8 +86,12 @@ class FakeVectorStore:
 
     def __init__(self, results: list[tuple[FakeDocument, float]]):
         self.results = results
+        # Lets a test prove use_retrieval=False skips the store entirely,
+        # rather than just discarding whatever it returned.
+        self.query_count = 0
 
     def similarity_search_with_relevance_scores(self, query: str, k: int = 5):
+        self.query_count += 1
         return self.results[:k]
 
 
