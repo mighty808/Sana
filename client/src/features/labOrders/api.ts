@@ -81,3 +81,17 @@ export function useUpdateLabOrder() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lab-orders'], exact: false }),
   })
 }
+
+// DELETE /lab-orders/:id — removes an order placed in error. Same
+// 'laborder.delete' / own-doctor-only / still-ORDERED restriction as
+// useUpdateLabOrder above.
+export function useDeleteLabOrder() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const res = await api.delete<ApiSuccess<LabOrder>>(`/lab-orders/${id}`)
+      return res.data.data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lab-orders'], exact: false }),
+  })
+}
