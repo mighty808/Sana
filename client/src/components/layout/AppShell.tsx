@@ -7,6 +7,8 @@ import { ROLE_LABELS } from '@/lib/roles'
 import { NotificationBell } from '@/features/notifications/NotificationBell'
 import { useRealtimeNotifications, useNotifications } from '@/features/notifications/api'
 import { useRealtimeWardBoard } from '@/features/encounters/api'
+import { useDashboard } from '@/features/dashboard/api'
+import type { DashboardSummary } from '@/types/dashboard'
 import {
   SidebarProvider,
   Sidebar,
@@ -43,6 +45,41 @@ function initials(firstName: string, lastName: string) {
 // Notifications item's badge is just "every unread notification."
 const REFERRAL_NOTIFICATION_TYPES = ['referral.created', 'referral.message.created', 'referral.status.updated']
 
+// Maps a nav item's route to whichever GET /analytics/dashboard field
+// represents "something pending/needs your attention" for it — reusing
+// the exact counts the Dashboard page itself already shows, rather than a
+// second query computing the same thing a different way. Only fields that
+// are genuinely an actionable count get a badge here: `appointmentsToday`
+// and `outstandingBalance` (money, not a count) are deliberately left out.
+// Keyed by role first since the same route means a different field
+// depending on who's looking (e.g. '/lab-orders' is `pendingOrders` for a
+// Lab Tech but `labOrdersAwaitingReview` for a Doctor) — `summary.role`
+// narrows the union for free, so each branch only sees the fields that
+// role's response actually has.
+function getDashboardBadge(to: string, summary: DashboardSummary | undefined): number {
+  if (!summary) return 0
+  switch (summary.role) {
+    case 'ADMIN':
+      return to === '/lab-orders' ? summary.pendingLabOrders : 0
+    case 'DOCTOR':
+      if (to === '/encounters') return summary.activeEncounters
+      if (to === '/lab-orders') return summary.labOrdersAwaitingReview
+      return 0
+    case 'NURSE':
+      // The actual "needs a nurse" queue — checked in, but no encounter
+      // opened yet — and the "Start encounter" action lives on this same
+      // Appointments page, so that's where the badge belongs too.
+      return to === '/appointments' ? summary.vitalsPendingCount : 0
+    case 'PATIENT':
+      return to === '/appointments' ? summary.upcomingAppointments : 0
+    case 'LAB_TECH':
+      return to === '/lab-orders' ? summary.pendingOrders : 0
+    case 'PHARMACIST':
+      return to === '/prescriptions' ? summary.pendingPrescriptions : 0
+    default:
+      return 0
+  }
+}
 
 // This is the shared frame every logged-in screen renders inside: a white
 // sidebar with nav items grouped by role, a slim header bar showing the
@@ -75,6 +112,11 @@ export function AppShell() {
   // does — see the ITEMS.referrals comment in navItems.ts.
   const referralUnreadCount =
     notifications?.filter((n) => !n.readAt && REFERRAL_NOTIFICATION_TYPES.includes(n.type)).length ?? 0
+  // Same "shared cache, called a second time" idea as useNotifications
+  // above — DashboardPage.tsx already fetches this under the same query
+  // key, so this doesn't cost an extra request, just reuses the data for
+  // the sidebar badges below (see getDashboardBadge).
+  const { data: dashboard } = useDashboard()
 
   if (!user) return null
 
@@ -120,13 +162,19 @@ export function AppShell() {
               <SidebarMenu>
                 {group.items.map((item) => {
                   const isActive = location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
-                  // Notifications and Referrals are the only items that
-                  // show a count badge. The unread count is state specific
-                  // to this session, not something that belongs as a field
-                  // on the shared NavItem shape every other item also uses,
-                  // so it's looked up by matching the route instead.
+                  // The badge count is state specific to this session, not
+                  // something that belongs as a field on the shared NavItem
+                  // shape every other item also uses, so it's looked up by
+                  // matching the route instead. Notifications/Referrals use
+                  // the live notifications query directly; everything else
+                  // reuses the dashboard summary's own pending counts (see
+                  // getDashboardBadge above).
                   const badgeCount =
-                    item.to === '/notifications' ? unreadCount : item.to === '/referrals' ? referralUnreadCount : 0
+                    item.to === '/notifications'
+                      ? unreadCount
+                      : item.to === '/referrals'
+                        ? referralUnreadCount
+                        : getDashboardBadge(item.to, dashboard)
                   return (
                     <SidebarMenuItem key={item.to}>
                       <SidebarMenuButton asChild isActive={isActive} tooltip={item.label}>
