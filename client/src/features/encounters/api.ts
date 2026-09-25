@@ -160,6 +160,20 @@ export function useUpdateVitals(encounterId: string) {
   })
 }
 
+// Calls DELETE /encounters/:id/vitals/:vitalId — removes an entry recorded
+// in error. Same 'vitals.delete' permission, nurse-only, not restricted to
+// the nurse who recorded it — same as useUpdateVitals above.
+export function useDeleteVitals(encounterId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (vitalId: string) => {
+      const res = await api.delete<ApiSuccess<VitalSign>>(`/encounters/${encounterId}/vitals/${vitalId}`)
+      return res.data.data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounters', 'detail', encounterId] }),
+  })
+}
+
 export function useAddDiagnosis(encounterId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -181,6 +195,20 @@ export function useUpdateDiagnosis(encounterId: string) {
   return useMutation({
     mutationFn: async ({ diagnosisId, input }: { diagnosisId: string; input: DiagnosisInput }) => {
       const res = await api.patch<ApiSuccess<Diagnosis>>(`/encounters/${encounterId}/diagnoses/${diagnosisId}`, input)
+      return res.data.data
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounters', 'detail', encounterId] }),
+  })
+}
+
+// Calls DELETE /encounters/:id/diagnoses/:diagnosisId — removes one entered
+// in error. Same 'diagnosis.delete' / own-doctor-only restriction as
+// useUpdateDiagnosis above.
+export function useDeleteDiagnosis(encounterId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (diagnosisId: string) => {
+      const res = await api.delete<ApiSuccess<Diagnosis>>(`/encounters/${encounterId}/diagnoses/${diagnosisId}`)
       return res.data.data
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounters', 'detail', encounterId] }),
