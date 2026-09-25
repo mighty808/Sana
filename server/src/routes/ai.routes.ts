@@ -254,6 +254,7 @@ router.get(
   '/consultations/lab-order/:labOrder',
   auth,
   requirePermission('ai.explainLabResult'),
+  validateObjectId('labOrder'),
   ctrl.listForLabOrder,
 )
 
