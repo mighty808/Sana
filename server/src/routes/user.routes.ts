@@ -51,7 +51,7 @@ router.get('/me', auth, ctrl.me)
  *               firstName: { type: string }
  *               lastName: { type: string }
  *               phone: { type: string }
- *               role: { type: string, enum: [ADMIN, DOCTOR, NURSE, PATIENT, LAB_TECH] }
+ *               role: { type: string, enum: [ADMIN, DOCTOR, NURSE, PATIENT, LAB_TECH, PHARMACIST] }
  *     responses:
  *       201:
  *         description: Created user's public profile.
