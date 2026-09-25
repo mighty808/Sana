@@ -29,6 +29,7 @@ export type Permission =
   | 'prescription.dispense'
   | 'laborder.create'
   | 'laborder.update'
+  | 'laborder.delete'
   | 'laborder.read'
   | 'labresult.create'
   | 'labresult.release'
