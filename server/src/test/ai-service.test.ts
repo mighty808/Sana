@@ -89,6 +89,7 @@ describe('explainLabResult', () => {
       code: 'LAB_RESULT_NOT_FOUND',
     })
   })
+
 })
 
 describe('suggestDifferentialDiagnosis', () => {
