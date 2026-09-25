@@ -487,6 +487,27 @@ SYSTEM_PROMPT = (
     "No headers, no lengthy caveats beyond the one-sentence rule above."
 )
 
+# Backstop for the prompts above: even with the "don't comment on the
+# retrieval itself" instruction, an LLM won't always obey it — this strips
+# out any sentence that slipped through anyway (e.g. "No strongly relevant
+# passages were found in the knowledge base."), rather than relying on
+# prompt compliance alone. Splits into sentences first and drops whichever
+# ones mention both "relevant" and "passage(s)" — the recurring shape of
+# this commentary regardless of how the model phrases it — rather than
+# matching one exact sentence, which would miss the model's paraphrases.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _strip_retrieval_commentary(text: str) -> str:
+    sentences = _SENTENCE_SPLIT_RE.split(text.strip())
+    kept = [
+        s
+        for s in sentences
+        if not (re.search(r"\brelevant\b", s, re.IGNORECASE) and re.search(r"\bpassages?\b", s, re.IGNORECASE))
+    ]
+    cleaned = " ".join(kept).strip()
+    return cleaned or text.strip()
+
 
 def consult(
     query: str,
@@ -581,6 +602,8 @@ def consult(
             ]
         )
         guidance = completion.content
+
+    guidance = _strip_retrieval_commentary(str(guidance))
 
     response_time_ms = int((time.monotonic() - started) * 1000)
 
