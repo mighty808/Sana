@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Pill } from 'lucide-react'
+import { Pill, Receipt } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/useAuth'
 import { usePrescriptions, useDispensePrescription } from './api'
@@ -101,22 +101,16 @@ function groupByPatient(prescriptions: Prescription[]): PatientPrescriptionGroup
 // item, by PatientPrescriptionsDialog below (Admin/Pharmacist's grouped
 // view) — dispensing and billing always happen per prescription, so
 // grouping several under one patient can never merge that action away.
-function PrescriptionActions({ prescription }: { prescription: Prescription }) {
-  const { hasPermission } = useAuth()
-  const dispense = useDispensePrescription()
+// Bills this prescription at Sana's standard per-medication fee.
+// Self-contained: fetches its own already-billed state and renders nothing
+// once an invoice exists (or the prescription is CANCELLED), so every
+// caller just needs to gate on the 'invoice.create' permission and nothing
+// else — same shape as labOrders/LabOrdersPage.tsx's BillLabOrderButton.
+export function BillPrescriptionButton({ prescription, iconOnly }: { prescription: Prescription; iconOnly?: boolean }) {
   const createInvoice = useCreateInvoice()
   const { data: invoice } = useInvoiceForPrescription(prescription._id)
-  const canDispense = hasPermission('prescription.dispense')
-  const canBill = hasPermission('invoice.create')
 
-  async function handleDispense() {
-    try {
-      await dispense.mutateAsync(prescription._id)
-      toast.success(`${prescription.prescriptionNumber} dispensed`)
-    } catch (err) {
-      toast.error(getApiErrorMessage(err))
-    }
-  }
+  if (invoice || prescription.status === 'CANCELLED') return null
 
   async function handleBill() {
     try {
@@ -134,6 +128,40 @@ function PrescriptionActions({ prescription }: { prescription: Prescription }) {
     }
   }
 
+  return iconOnly ? (
+    <Button
+      type="button"
+      size="icon-sm"
+      variant="ghost"
+      aria-label="Bill this prescription"
+      disabled={createInvoice.isPending}
+      onClick={handleBill}
+    >
+      <Receipt className="size-3.5" />
+    </Button>
+  ) : (
+    <Button size="sm" variant="outline" disabled={createInvoice.isPending} onClick={handleBill}>
+      {createInvoice.isPending ? 'Billing…' : 'Bill this prescription'}
+    </Button>
+  )
+}
+
+function PrescriptionActions({ prescription }: { prescription: Prescription }) {
+  const { hasPermission } = useAuth()
+  const dispense = useDispensePrescription()
+  const { data: invoice } = useInvoiceForPrescription(prescription._id)
+  const canDispense = hasPermission('prescription.dispense')
+  const canBill = hasPermission('invoice.create')
+
+  async function handleDispense() {
+    try {
+      await dispense.mutateAsync(prescription._id)
+      toast.success(`${prescription.prescriptionNumber} dispensed`)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
   return (
     <>
       {invoice && <StatusBadge status={invoice.status} />}
@@ -142,11 +170,7 @@ function PrescriptionActions({ prescription }: { prescription: Prescription }) {
           {dispense.isPending ? 'Dispensing…' : 'Dispense'}
         </Button>
       )}
-      {canBill && !invoice && prescription.status !== 'CANCELLED' && (
-        <Button size="sm" variant="outline" disabled={createInvoice.isPending} onClick={handleBill}>
-          {createInvoice.isPending ? 'Billing…' : 'Bill this prescription'}
-        </Button>
-      )}
+      {canBill && <BillPrescriptionButton prescription={prescription} />}
     </>
   )
 }
