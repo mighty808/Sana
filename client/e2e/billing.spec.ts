@@ -29,7 +29,14 @@ test('an invoice is paid off in two payments, and the patient can see it', async
     tag,
   })
 
+  // Admin's /invoices is a patient-summary list, not a flat invoice list —
+  // find the portal patient's row first (one row per patient, however many
+  // invoices they have — "Asante" is unambiguous even with other specs'
+  // invoices piled onto the same shared portal patient), then the specific
+  // invoice on their own tab.
   await adminPage.goto('/invoices')
+  await adminPage.getByRole('link', { name: /Asante/ }).click()
+  await expect(adminPage).toHaveURL(/\/patients\/[a-f0-9]{24}\?tab=invoices$/)
   await adminPage.getByRole('link', { name: new RegExp(invoice.invoiceNumber) }).click()
   await expect(adminPage).toHaveURL(/\/invoices\/[a-f0-9]{24}$/)
 
@@ -67,6 +74,7 @@ test('paying more than the outstanding balance is refused and shown', async ({ a
   })
 
   await adminPage.goto('/invoices')
+  await adminPage.getByRole('link', { name: /Asante/ }).click()
   await adminPage.getByRole('link', { name: new RegExp(invoice.invoiceNumber) }).click()
 
   await adminPage.getByRole('button', { name: 'Record payment' }).click()
