@@ -32,6 +32,7 @@ describe('getDashboard — ADMIN', () => {
     const encounter = await createEncounter(doctor.id, patientB.id)
     await createLabOrder(doctor.id, patientB.id, encounter.id) // ORDERED
     await createTestInvoice(patientB.id, encounter.id, { total: 100 }) // fully unpaid
+    await createAiConsultation(encounter.id, doctor.id, patientB.id, { acuityLevel: 'CRITICAL' })
 
     const result = await getDashboard(admin)
 
@@ -49,6 +50,7 @@ describe('getDashboard — ADMIN', () => {
     expect(r.appointmentsToday).toBe(1)
     expect(r.pendingLabOrders).toBe(1)
     expect(r.outstandingBalance).toBe(100)
+    expect(r.criticalPatients).toBe(1)
   })
 })
 
@@ -62,7 +64,9 @@ describe('getDashboard — DOCTOR', () => {
     const encounter = await createEncounter(doctorA.id, patient.id) // IN_PROGRESS
     const order = await createLabOrder(doctorA.id, patient.id, encounter.id)
     await LabOrder.updateOne({ _id: order.id }, { status: 'COMPLETED' }) // awaiting review
-    await createAiConsultation(encounter.id, doctorA.id, patient.id) // UNREVIEWED by default
+    // UNREVIEWED by default; also CRITICAL, so this doubles as the
+    // criticalPatients fixture below.
+    await createAiConsultation(encounter.id, doctorA.id, patient.id, { acuityLevel: 'CRITICAL' })
 
     const result = await getDashboard(doctorA)
 
@@ -73,6 +77,20 @@ describe('getDashboard — DOCTOR', () => {
     expect(r.activeEncounters).toBe(1)
     expect(r.labOrdersAwaitingReview).toBe(1)
     expect(r.aiConsultationsUnreviewed).toBe(1)
+    expect(r.criticalPatients).toBe(1)
+  })
+
+  test("does not count another doctor's critical encounter", async () => {
+    const doctorA = await createUser('DOCTOR')
+    const doctorB = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctorB.id, patient.id)
+    await createAiConsultation(encounter.id, doctorB.id, patient.id, { acuityLevel: 'CRITICAL' })
+
+    const result = await getDashboard(doctorA)
+
+    const r = result as unknown as Record<string, number | string>
+    expect(r.criticalPatients).toBe(0)
   })
 })
 
@@ -87,14 +105,20 @@ describe('getDashboard — NURSE', () => {
     // A second checked-in-or-further appointment today with NO encounter yet.
     const patient2 = await createPatient()
     await createAppointment(doctor.id, patient2.id, { date: new Date(), status: 'IN_PROGRESS' })
+    // A third patient with an actual open encounter, flagged CRITICAL — a
+    // nurse sees every open encounter on the board, not just their own.
+    const patient3 = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient3.id)
+    await createAiConsultation(encounter.id, doctor.id, patient3.id, { acuityLevel: 'CRITICAL' })
 
     const result = await getDashboard(nurse)
 
     const r = result as unknown as Record<string, number | string>
     expect(r.role).toBe('NURSE')
-    expect(r.patientsRegisteredToday).toBe(2)
+    expect(r.patientsRegisteredToday).toBe(3)
     expect(r.appointmentsCheckedInToday).toBe(1)
     expect(r.vitalsPendingCount).toBe(2) // neither appointment has an encounter field set
+    expect(r.criticalPatients).toBe(1)
   })
 })
 
