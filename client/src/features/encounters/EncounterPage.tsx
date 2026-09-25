@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { useForm, useFieldArray, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -6,6 +6,7 @@ import { z } from 'zod'
 import {
   ArrowLeft,
   Activity,
+  ChevronDown,
   Stethoscope,
   FlaskConical,
   HeartPulse,
@@ -942,6 +943,43 @@ function PrescribeForm({ encounterId, hasExistingPrescriptions }: { encounterId:
   )
 }
 
+// A Card whose whole body — list plus write-form — is collapsed behind its
+// own header by default, revealed on click. Used for Prescriptions and
+// Referrals below: both can carry a write-form as well as a list, so the
+// existing per-form collapse (useCollapsibleForm) alone still left the list
+// itself always on screen, taking up space in this already-long page even
+// when nobody needs to look at it right now.
+function CollapsibleCard({
+  icon: Icon,
+  iconClassName,
+  title,
+  children,
+}: {
+  icon?: LucideIcon
+  iconClassName?: string
+  title: string
+  children: ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <Card>
+      <CardHeader>
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="flex w-full items-center justify-between gap-2 text-left"
+        >
+          <CardTitle className="flex items-center gap-2 text-base">
+            {Icon && <Icon className={`size-4 ${iconClassName ?? ''}`} />} {title}
+          </CardTitle>
+          <ChevronDown className={`size-4 shrink-0 text-slate-600 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </button>
+      </CardHeader>
+      {open && <CardContent className="space-y-4">{children}</CardContent>}
+    </Card>
+  )
+}
+
 // Read-only — dispensing only ever happens from the Pharmacist's own
 // /prescriptions queue (see PrescriptionsPage.tsx), never from here.
 function PrescriptionsList({ prescriptions }: { prescriptions: Prescription[] }) {
@@ -1317,28 +1355,21 @@ export function EncounterPage() {
               only the assigned doctor gets the write form, but anyone who
               can open the encounter sees what's already been prescribed. */}
           {(hasPermission('prescription.create') || prescriptions.length > 0) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <Pill className="size-4 text-blue-600" /> Prescriptions
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {prescriptions.length === 0 ? (
-                  <p className="text-sm text-slate-600">No prescriptions on this encounter.</p>
-                ) : (
-                  <PrescriptionsList prescriptions={prescriptions} />
-                )}
+            <CollapsibleCard icon={Pill} iconClassName="text-blue-600" title="Prescriptions">
+              {prescriptions.length === 0 ? (
+                <p className="text-sm text-slate-600">No prescriptions on this encounter.</p>
+              ) : (
+                <PrescriptionsList prescriptions={prescriptions} />
+              )}
 
-                {hasPermission('prescription.create') &&
-                  encounter.status === 'IN_PROGRESS' &&
-                  user?.id === encounter.doctor._id && (
-                    <div className="border-t border-border pt-4">
-                      <PrescribeForm encounterId={encounter._id} hasExistingPrescriptions={prescriptions.length > 0} />
-                    </div>
-                  )}
-              </CardContent>
-            </Card>
+              {hasPermission('prescription.create') &&
+                encounter.status === 'IN_PROGRESS' &&
+                user?.id === encounter.doctor._id && (
+                  <div className="border-t border-border pt-4">
+                    <PrescribeForm encounterId={encounter._id} hasExistingPrescriptions={prescriptions.length > 0} />
+                  </div>
+                )}
+            </CollapsibleCard>
           )}
 
           {/* Referring is restricted to the assigned doctor client-side too
@@ -1348,26 +1379,21 @@ export function EncounterPage() {
               referral sent to them has no reason to see a form that would
               only 404. */}
           {(hasPermission('referral.create') || referrals.length > 0) && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">Referrals</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {referrals.length === 0 ? (
-                  <p className="text-sm text-slate-600">No referrals on this encounter.</p>
-                ) : (
-                  <ReferralsList referrals={referrals} />
-                )}
+            <CollapsibleCard title="Referrals">
+              {referrals.length === 0 ? (
+                <p className="text-sm text-slate-600">No referrals on this encounter.</p>
+              ) : (
+                <ReferralsList referrals={referrals} />
+              )}
 
-                {hasPermission('referral.create') &&
-                  encounter.status === 'IN_PROGRESS' &&
-                  user?.id === encounter.doctor._id && (
-                    <div className="border-t border-border pt-4">
-                      <ReferToAnotherDoctorForm encounterId={encounter._id} hasExistingReferrals={referrals.length > 0} />
-                    </div>
-                  )}
-              </CardContent>
-            </Card>
+              {hasPermission('referral.create') &&
+                encounter.status === 'IN_PROGRESS' &&
+                user?.id === encounter.doctor._id && (
+                  <div className="border-t border-border pt-4">
+                    <ReferToAnotherDoctorForm encounterId={encounter._id} hasExistingReferrals={referrals.length > 0} />
+                  </div>
+                )}
+            </CollapsibleCard>
           )}
         </div>
 
