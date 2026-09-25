@@ -4,7 +4,7 @@ import { Role } from '../models/Role.js'
 import { Appointment } from '../models/Appointment.js'
 import { Encounter } from '../models/Encounter.js'
 import { LabOrder } from '../models/LabOrder.js'
-import { AiConsultation } from '../models/AiConsultation.js'
+import { AiConsultation, AI_ACUITY_LEVELS } from '../models/AiConsultation.js'
 import { LabResult } from '../models/LabResult.js'
 import { Prescription } from '../models/Prescription.js'
 import { Payment } from '../models/Payment.js'
@@ -37,6 +37,31 @@ function todayRange() {
   return { start, end }
 }
 
+// Counts open encounters whose latest acuity read is CRITICAL — the same
+// "needs a doctor's attention right now" signal encounter.service.ts's
+// getWardBoard surfaces per-encounter (same "latest acuity-bearing
+// consultation per encounter" aggregation shape), just reduced to one
+// number for a sidebar badge instead of a full list. `doctorId` narrows it
+// the same way queryScope.ts's scopeToOwnDoctor does for the Ward Board
+// list itself, so a doctor's badge always matches what they'd actually see
+// if they clicked through — omit it for ADMIN/NURSE, who see every open
+// encounter on the board, not just their own.
+async function countCriticalOpenEncounters(doctorId?: string): Promise<number> {
+  const encounterFilter: Record<string, unknown> = { status: 'IN_PROGRESS' }
+  if (doctorId) encounterFilter.doctor = doctorId
+  const openEncounterIds = await Encounter.find(encounterFilter).distinct('_id')
+  if (openEncounterIds.length === 0) return 0
+
+  const rows = await AiConsultation.aggregate([
+    { $match: { encounter: { $in: openEncounterIds }, 'response.acuityLevel': { $in: AI_ACUITY_LEVELS } } },
+    { $sort: { createdAt: -1 } },
+    { $group: { _id: '$encounter', acuityLevel: { $first: '$response.acuityLevel' } } },
+    { $match: { acuityLevel: 'CRITICAL' } },
+    { $count: 'count' },
+  ])
+  return rows[0]?.count ?? 0
+}
+
 // The Admin dashboard: system-wide counts an administrator needs at a
 // glance — how many patients are registered, how today's appointments are
 // going, how much lab work is still outstanding, how much billing is
@@ -53,16 +78,17 @@ async function getAdminDashboard() {
   // handful of real hospital staff.
   const staffRoleIds = await Role.find({ name: { $ne: 'PATIENT' } }).distinct('_id')
 
-  const [totalPatients, totalStaffUsers, appointmentsToday, pendingLabOrders, outstandingBalance] =
+  const [totalPatients, totalStaffUsers, appointmentsToday, pendingLabOrders, outstandingBalance, criticalPatients] =
     await Promise.all([
       Patient.countDocuments({ status: 'ACTIVE' }),
       User.countDocuments({ status: 'ACTIVE', role: { $in: staffRoleIds } }),
       Appointment.countDocuments({ date: { $gte: start, $lt: end } }),
       LabOrder.countDocuments({ status: { $in: ['ORDERED', 'PROCESSING'] } }),
       sumOutstandingBalance(),
+      countCriticalOpenEncounters(),
     ])
 
-  return { totalPatients, totalStaffUsers, appointmentsToday, pendingLabOrders, outstandingBalance }
+  return { totalPatients, totalStaffUsers, appointmentsToday, pendingLabOrders, outstandingBalance, criticalPatients }
 }
 
 // The Doctor dashboard: this doctor's own workload. It shows how many
@@ -77,17 +103,24 @@ async function getAdminDashboard() {
 async function getDoctorDashboard(doctorId: string) {
   const { start, end } = todayRange()
 
-  const [myPatientIds, appointmentsToday, activeEncounters, labOrdersAwaitingReview, aiConsultationsUnreviewed] =
-    await Promise.all([
-      Appointment.distinct('patient', { doctor: doctorId }),
-      Appointment.countDocuments({ doctor: doctorId, date: { $gte: start, $lt: end } }),
-      Encounter.countDocuments({ doctor: doctorId, status: 'IN_PROGRESS' }),
-      // A COMPLETED order means every test on it has a result, but the
-      // order itself hasn't been marked REVIEWED yet — see
-      // models/LabOrder.ts for the full status lifecycle.
-      LabOrder.countDocuments({ doctor: doctorId, status: 'COMPLETED' }),
-      AiConsultation.countDocuments({ doctor: doctorId, reviewStatus: 'UNREVIEWED' }),
-    ])
+  const [
+    myPatientIds,
+    appointmentsToday,
+    activeEncounters,
+    labOrdersAwaitingReview,
+    aiConsultationsUnreviewed,
+    criticalPatients,
+  ] = await Promise.all([
+    Appointment.distinct('patient', { doctor: doctorId }),
+    Appointment.countDocuments({ doctor: doctorId, date: { $gte: start, $lt: end } }),
+    Encounter.countDocuments({ doctor: doctorId, status: 'IN_PROGRESS' }),
+    // A COMPLETED order means every test on it has a result, but the
+    // order itself hasn't been marked REVIEWED yet — see
+    // models/LabOrder.ts for the full status lifecycle.
+    LabOrder.countDocuments({ doctor: doctorId, status: 'COMPLETED' }),
+    AiConsultation.countDocuments({ doctor: doctorId, reviewStatus: 'UNREVIEWED' }),
+    countCriticalOpenEncounters(doctorId),
+  ])
 
   return {
     myPatients: myPatientIds.length,
@@ -95,6 +128,7 @@ async function getDoctorDashboard(doctorId: string) {
     activeEncounters,
     labOrdersAwaitingReview,
     aiConsultationsUnreviewed,
+    criticalPatients,
   }
 }
 
@@ -108,17 +142,19 @@ async function getDoctorDashboard(doctorId: string) {
 async function getNurseDashboard() {
   const { start, end } = todayRange()
 
-  const [patientsRegisteredToday, appointmentsCheckedInToday, vitalsPendingCount] = await Promise.all([
-    Patient.countDocuments({ createdAt: { $gte: start, $lt: end } }),
-    Appointment.countDocuments({ date: { $gte: start, $lt: end }, status: 'CHECKED_IN' }),
-    Appointment.countDocuments({
-      date: { $gte: start, $lt: end },
-      status: { $in: ['CHECKED_IN', 'IN_PROGRESS', 'COMPLETED'] },
-      encounter: { $exists: false },
-    }),
-  ])
+  const [patientsRegisteredToday, appointmentsCheckedInToday, vitalsPendingCount, criticalPatients] =
+    await Promise.all([
+      Patient.countDocuments({ createdAt: { $gte: start, $lt: end } }),
+      Appointment.countDocuments({ date: { $gte: start, $lt: end }, status: 'CHECKED_IN' }),
+      Appointment.countDocuments({
+        date: { $gte: start, $lt: end },
+        status: { $in: ['CHECKED_IN', 'IN_PROGRESS', 'COMPLETED'] },
+        encounter: { $exists: false },
+      }),
+      countCriticalOpenEncounters(),
+    ])
 
-  return { patientsRegisteredToday, appointmentsCheckedInToday, vitalsPendingCount }
+  return { patientsRegisteredToday, appointmentsCheckedInToday, vitalsPendingCount, criticalPatients }
 }
 
 // PATIENT dashboard: a personal summary — how many appointments they still
