@@ -100,6 +100,12 @@ class ConsultRequest(BaseModel):
     # pipeline returns a structured differentials read in place of the usual
     # guidance text.
     assessDifferential: bool = False
+    # Only set false by the Lab Tech's "explain this result" shortcut (see
+    # ai.service.ts's explainLabResult). When false, the vector store is
+    # never queried — the model answers from general medical knowledge
+    # instead of the clinical-guidelines knowledge base, and `sources`
+    # comes back empty. See rag.pipeline.consult's own docstring for why.
+    useRetrieval: bool = True
 
 
 class Source(BaseModel):
@@ -195,7 +201,9 @@ def consult(req: ConsultRequest):
     patient_context = req.patientContext.model_dump() if req.patientContext else {}
 
     try:
-        result = run_rag_pipeline(req.query, patient_context, req.assessAcuity, req.assessDifferential)
+        result = run_rag_pipeline(
+            req.query, patient_context, req.assessAcuity, req.assessDifferential, req.useRetrieval
+        )
     except Exception as exc:  # noqa: BLE001 — this catches any exception on
         # purpose. Any failure in the pipeline (the embedding model failing
         # to load, a Groq API error, a vector store problem) should reach
