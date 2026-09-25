@@ -23,6 +23,10 @@ export function useCreatePayment() {
     onSuccess: (_payment, variables) => {
       queryClient.invalidateQueries({ queryKey: ['invoices', 'detail', variables.invoice] })
       queryClient.invalidateQueries({ queryKey: ['invoices'], exact: false })
+      // A payment can close out an invoice (UNPAID/PARTIALLY_PAID -> PAID),
+      // which changes the sidebar's Invoices badge (see AppShell.tsx's
+      // getDashboardBadge) — keeps it live in-session.
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }
