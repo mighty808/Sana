@@ -2,10 +2,10 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { FlaskConical, PlusCircle, Send, Sparkles, Clock, Hourglass, AlertTriangle, Printer, ChevronDown } from 'lucide-react'
+import { FlaskConical, PlusCircle, Send, Sparkles, Clock, Hourglass, AlertTriangle, Printer, Pencil, ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/useAuth'
-import { useLabOrders, useLabOrder } from './api'
+import { useLabOrders, useLabOrder, useUpdateLabOrder } from './api'
 import { useCreateLabResult, useReleaseLabResult } from '@/features/labResults/api'
 import { useInvoiceForLabOrder, useCreateInvoice } from '@/features/invoices/api'
 import { useExplainLabResult, useLabOrderResultAnalyses } from '@/features/ai/api'
@@ -13,7 +13,7 @@ import { useAiAction } from '@/features/ai/useAiAction'
 import { STANDARD_LAB_TEST_FEE } from '@/lib/money'
 import { matchTestsToResults } from '@/lib/labOrder'
 import { formatShortDate } from '@/lib/date'
-import { LAB_ORDER_STATUSES, type LabOrder, type LabOrderStatus, type LabTestItem } from '@/types/labOrder'
+import { LAB_ORDER_STATUSES, LAB_ORDER_PRIORITIES, type LabOrder, type LabOrderStatus, type LabTestItem } from '@/types/labOrder'
 import { LAB_RESULT_INTERPRETATIONS, type LabResult } from '@/types/labResult'
 import type { AiConsultation } from '@/types/aiConsultation'
 import { getApiErrorMessage } from '@/lib/api'
@@ -31,7 +31,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 
 const resultFormSchema = z.object({
   testName: z.string().min(1, 'Select a test'),
@@ -354,6 +362,126 @@ function LabResultRow({ test, result, actions }: { test: LabTestItem; result: La
   )
 }
 
+const editLabOrderFormSchema = z.object({
+  testNames: z.string().trim().min(1, 'List at least one test'),
+  priority: z.enum(LAB_ORDER_PRIORITIES),
+  clinicalNotes: z.string().trim().optional(),
+})
+type EditLabOrderForm = z.infer<typeof editLabOrderFormSchema>
+
+// Corrects a lab order's requested tests, priority, or notes. Only reachable
+// while the order is still ORDERED — updateLabOrder rejects it with 409
+// LAB_ORDER_IN_PROGRESS once a lab tech has entered any result, so this
+// dialog's trigger is gated the same way. `tests` fully replaces the
+// existing list (see updateLabOrderSchema's own comment), so the textarea
+// is pre-filled from the current test names rather than starting blank —
+// same comma/newline-separated shape as the doctor's original "Request lab
+// tests" form.
+function EditLabOrderDialog({ order }: { order: LabOrder }) {
+  const [open, setOpen] = useState(false)
+  const updateLabOrder = useUpdateLabOrder()
+  const defaultValues = {
+    testNames: order.tests.map((t) => t.testName).join('\n'),
+    priority: order.priority,
+    clinicalNotes: order.clinicalNotes ?? '',
+  }
+  const form = useForm<EditLabOrderForm>({ resolver: zodResolver(editLabOrderFormSchema), defaultValues })
+
+  async function onSubmit(values: EditLabOrderForm) {
+    try {
+      const tests = values.testNames
+        .split(/[,\n]/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .map((testName) => ({ testName }))
+      await updateLabOrder.mutateAsync({
+        id: order._id,
+        input: { tests, priority: values.priority, clinicalNotes: values.clinicalNotes },
+      })
+      toast.success('Lab order updated')
+      setOpen(false)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) form.reset(defaultValues)
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button type="button" size="sm" variant="outline">
+          <Pencil className="size-3.5" /> Edit order
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit lab order</DialogTitle>
+          <DialogDescription>Separate multiple tests with a comma or a new line.</DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="testNames"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Tests</FormLabel>
+                  <FormControl>
+                    <Textarea rows={3} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="priority"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Priority</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
+                    <FormControl>
+                      <SelectTrigger className="w-full">
+                        <SelectValue />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      <SelectItem value="ROUTINE">Routine</SelectItem>
+                      <SelectItem value="URGENT">Urgent</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="clinicalNotes"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Clinical notes (optional)</FormLabel>
+                  <FormControl>
+                    <Textarea rows={2} {...field} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? 'Saving…' : 'Save changes'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // Clicking a lab order row opens this dialog, which shows the patient's details
 // and everything entered against the order so far, all in one place. The
 // "Release" button sits directly next to each ENTERED result here, rather than
@@ -376,6 +504,7 @@ function LabOrderDetailDialog({
   const canExplain = hasPermission('ai.explainLabResult')
   const canSeePayment = hasPermission('invoice.read')
   const canBill = hasPermission('invoice.create')
+  const canEditOrder = hasPermission('laborder.update')
   const { data: invoice } = useInvoiceForLabOrder(canSeePayment ? data?.order._id : undefined)
   const { data: labOrderAnalyses } = useLabOrderResultAnalyses(canExplain ? (orderId ?? undefined) : undefined)
   const analysesByResultId = useMemo(() => {
@@ -437,6 +566,7 @@ function LabOrderDetailDialog({
                     {data.order.patient.firstName} {data.order.patient.lastName}
                   </DialogTitle>
                   {canSeePayment && <StatusBadge status={invoice ? invoice.status : 'no invoice yet'} />}
+                  {canEditOrder && data.order.status === 'ORDERED' && <EditLabOrderDialog order={data.order} />}
                   {canBill && !invoice && (
                     <Button
                       type="button"
