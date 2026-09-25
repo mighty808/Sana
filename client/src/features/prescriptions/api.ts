@@ -28,7 +28,12 @@ export function useCreatePrescription(encounterId: string) {
       const res = await api.post<ApiSuccess<Prescription>>(`/encounters/${encounterId}/prescriptions`, input)
       return res.data.data
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounters', 'detail', encounterId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['encounters', 'detail', encounterId] })
+      // A new prescription changes the Pharmacist sidebar's Prescriptions
+      // badge (see AppShell.tsx's getDashboardBadge).
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
 
@@ -51,6 +56,9 @@ export function useDispensePrescription() {
     onSuccess: (prescription) => {
       queryClient.invalidateQueries({ queryKey: ['prescriptions'], exact: false })
       queryClient.invalidateQueries({ queryKey: ['encounters', 'detail', prescription.encounter] })
+      // Dispensing moves it out of the Pharmacist sidebar's Prescriptions
+      // badge count too.
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }
