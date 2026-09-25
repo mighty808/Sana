@@ -100,6 +100,11 @@ export function useCreateInvoice() {
       const res = await api.post<ApiSuccess<Invoice>>('/invoices', input)
       return res.data.data
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['invoices'], exact: false }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['invoices'], exact: false })
+      // A new invoice changes the sidebar's Invoices badge count (see
+      // AppShell.tsx's getDashboardBadge).
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
