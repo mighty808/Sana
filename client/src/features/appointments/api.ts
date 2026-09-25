@@ -49,6 +49,12 @@ export function useUpdateAppointmentStatus() {
       const res = await api.patch<ApiSuccess<Appointment>>(`/appointments/${id}/status`, { status })
       return res.data.data
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['appointments'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['appointments'] })
+      // A status change (e.g. checking a patient in) moves the Nurse
+      // sidebar's Appointments badge (vitalsPendingCount) — see
+      // AppShell.tsx's getDashboardBadge.
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
