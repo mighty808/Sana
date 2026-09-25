@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/useAuth'
-import { useEncounter, useAddVitals, useUpdateVitals, useAddDiagnosis, useCompleteEncounter } from './api'
+import { useEncounter, useAddVitals, useUpdateVitals, useAddDiagnosis, useUpdateDiagnosis, useCompleteEncounter } from './api'
 import type { UpdateVitalsInput } from './api'
 import { useCreateLabOrder, useLabOrdersForEncounter } from '@/features/labOrders/api'
 import { useAiConsultations, useAnalyzeVitals } from '@/features/ai/api'
@@ -35,7 +35,7 @@ import { useDoctors } from '@/features/users/api'
 import { getApiErrorMessage } from '@/lib/api'
 import { isPopulated } from '@/lib/utils'
 import { formatDateTime } from '@/lib/date'
-import type { VitalSign, EncounterStatus } from '@/types/encounter'
+import type { VitalSign, EncounterStatus, Diagnosis } from '@/types/encounter'
 import type { Referral } from '@/types/referral'
 import type { Prescription } from '@/types/prescription'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -515,16 +515,99 @@ function NurseAiAnalysis({ encounterId }: { encounterId: string }) {
   )
 }
 
+// Corrects a diagnosis that's already been added — same shape as
+// EditVitalsDialog above, just per-item instead of one dialog for a single
+// latest record, since a diagnosis list can hold several entries. The
+// server (updateDiagnosis) already scopes this to the encounter's own
+// assigned doctor and refuses it once the encounter is no longer
+// IN_PROGRESS, so the client-side gate on this dialog's trigger only needs
+// to mirror the same 'diagnosis.update' + open-encounter check, not
+// re-derive ownership itself.
+function EditDiagnosisDialog({ encounterId, diagnosis }: { encounterId: string; diagnosis: Diagnosis }) {
+  const [open, setOpen] = useState(false)
+  const updateDiagnosis = useUpdateDiagnosis(encounterId)
+  const form = useForm<DiagnosisForm>({
+    resolver: zodResolver(diagnosisFormSchema),
+    defaultValues: { diagnosis: diagnosis.diagnosis, notes: diagnosis.notes ?? '' },
+  })
+
+  async function onSubmit(values: DiagnosisForm) {
+    try {
+      await updateDiagnosis.mutateAsync({ diagnosisId: diagnosis._id, input: values })
+      toast.success('Diagnosis updated')
+      setOpen(false)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) form.reset({ diagnosis: diagnosis.diagnosis, notes: diagnosis.notes ?? '' })
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Edit diagnosis">
+          <Pencil className="size-3.5" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit diagnosis</DialogTitle>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <FormField
+              control={form.control}
+              name="diagnosis"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Diagnosis</FormLabel>
+                  <FormControl>
+                    <Input {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="notes"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Notes (optional)</FormLabel>
+                  <FormControl>
+                    <Textarea {...field} />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+            <DialogFooter>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? 'Saving…' : 'Save changes'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // Same reasoning as AddVitalsForm's collapse behavior above: once at least
 // one diagnosis already exists, the form stays collapsed behind a small
 // button instead of always sitting open under the list. With nothing
 // recorded yet, it opens by default since there's nothing else to show.
 //
 // `prefill`/`onPrefillConsumed` exist for the "Add as diagnosis" button on a
-// Sana AI differential-diagnosis suggestion (see DoctorDifferentialDiagnosis
-// above): accepting one sets `prefill` in the parent EncounterPage, which
-// this form picks up, expands itself for, and fills in — the doctor still
-// has to review and submit it themselves, same as every other diagnosis.
+// Sana AI differential-diagnosis suggestion (see SanaAiPanel's
+// onAcceptDifferential): accepting one sets `prefill` in the parent
+// EncounterPage, which this form picks up, expands itself for, and fills
+// in — the doctor still has to review and submit it themselves, same as
+// every other diagnosis.
 function AddDiagnosisForm({
   encounterId,
   hasExistingDiagnoses,
@@ -1189,12 +1272,17 @@ export function EncounterPage() {
                 <ul className="space-y-3">
                   {diagnoses.map((dx) => (
                     <li key={dx._id} className="rounded-lg border border-border p-3">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-slate-900">{dx.diagnosis}</p>
-                        {dx.diagnosisCode && (
-                          <Badge variant="outline" className="font-mono text-[10px] text-slate-600">
-                            {dx.diagnosisCode}
-                          </Badge>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-medium text-slate-900">{dx.diagnosis}</p>
+                          {dx.diagnosisCode && (
+                            <Badge variant="outline" className="font-mono text-[10px] text-slate-600">
+                              {dx.diagnosisCode}
+                            </Badge>
+                          )}
+                        </div>
+                        {hasPermission('diagnosis.update') && encounter.status === 'IN_PROGRESS' && (
+                          <EditDiagnosisDialog encounterId={encounter._id} diagnosis={dx} />
                         )}
                       </div>
                       {dx.notes && <p className="mt-1 text-xs text-slate-600">{dx.notes}</p>}
