@@ -87,6 +87,7 @@ async function getAdminDashboard() {
     outstandingBalance,
     criticalPatients,
     pendingInvoices,
+    pendingPrescriptions,
   ] = await Promise.all([
     Patient.countDocuments({ status: 'ACTIVE' }),
     User.countDocuments({ status: 'ACTIVE', role: { $in: staffRoleIds } }),
@@ -100,6 +101,10 @@ async function getAdminDashboard() {
     // getDashboardBadge), since a currency amount doesn't fit the small
     // numeric pill the badge renders.
     Invoice.countDocuments({ status: { $in: ['UNPAID', 'PARTIALLY_PAID'] } }),
+    // System-wide oversight version of the Pharmacist's own
+    // pendingPrescriptions (getPharmacistDashboard below) — same "queue
+    // depth" shape as pendingLabOrders is to Lab Tech's own count.
+    Prescription.countDocuments({ status: 'PRESCRIBED' }),
   ])
 
   return {
@@ -109,6 +114,7 @@ async function getAdminDashboard() {
     pendingLabOrders,
     outstandingBalance,
     criticalPatients,
+    pendingPrescriptions,
     pendingInvoices,
   }
 }
@@ -132,6 +138,7 @@ async function getDoctorDashboard(doctorId: string) {
     labOrdersAwaitingReview,
     aiConsultationsUnreviewed,
     criticalPatients,
+    myPendingPrescriptions,
   ] = await Promise.all([
     Appointment.distinct('patient', { doctor: doctorId }),
     Appointment.countDocuments({ doctor: doctorId, date: { $gte: start, $lt: end } }),
@@ -142,6 +149,10 @@ async function getDoctorDashboard(doctorId: string) {
     LabOrder.countDocuments({ doctor: doctorId, status: 'COMPLETED' }),
     AiConsultation.countDocuments({ doctor: doctorId, reviewStatus: 'UNREVIEWED' }),
     countCriticalOpenEncounters(doctorId),
+    // This doctor's own written-but-not-yet-dispensed prescriptions — the
+    // same PRESCRIBED status Pharmacist's own pendingPrescriptions counts
+    // system-wide, just scoped to what this doctor personally wrote.
+    Prescription.countDocuments({ doctor: doctorId, status: 'PRESCRIBED' }),
   ])
 
   return {
@@ -151,6 +162,7 @@ async function getDoctorDashboard(doctorId: string) {
     labOrdersAwaitingReview,
     aiConsultationsUnreviewed,
     criticalPatients,
+    myPendingPrescriptions,
   }
 }
 
@@ -185,12 +197,12 @@ async function getNurseDashboard() {
 async function getPatientDashboard(userId: string) {
   const patient = await getPatientForUser(userId)
   if (!patient) {
-    return { upcomingAppointments: 0, unreadNotifications: 0, outstandingBalance: 0 }
+    return { upcomingAppointments: 0, unreadNotifications: 0, outstandingBalance: 0, pendingPrescriptions: 0 }
   }
 
   const { start } = todayRange()
 
-  const [upcomingAppointments, unreadNotifications, outstandingBalance] = await Promise.all([
+  const [upcomingAppointments, unreadNotifications, outstandingBalance, pendingPrescriptions] = await Promise.all([
     Appointment.countDocuments({
       patient: patient.id,
       // This compares against the start of today, not the exact current
@@ -204,9 +216,12 @@ async function getPatientDashboard(userId: string) {
     }),
     Notification.countDocuments({ user: userId, readAt: { $exists: false } }),
     sumOutstandingBalance({ patient: patient._id }),
+    // Prescriptions this patient has that are written but not yet
+    // collected from the pharmacy — powers the sidebar's Prescriptions badge.
+    Prescription.countDocuments({ patient: patient._id, status: 'PRESCRIBED' }),
   ])
 
-  return { upcomingAppointments, unreadNotifications, outstandingBalance }
+  return { upcomingAppointments, unreadNotifications, outstandingBalance, pendingPrescriptions }
 }
 
 // The Lab Tech dashboard: the state of the lab queue, split into 4
