@@ -1,4 +1,12 @@
-import { createEncounter, addDiagnosis, updateDiagnosis, completeEncounter, getWardBoard } from '../services/encounter.service.js'
+import {
+  createEncounter,
+  addDiagnosis,
+  updateDiagnosis,
+  deleteDiagnosis,
+  completeEncounter,
+  getWardBoard,
+} from '../services/encounter.service.js'
+import { Diagnosis } from '../models/Diagnosis.js'
 import { Appointment } from '../models/Appointment.js'
 import { connectTestDb, clearTestDb, disconnectTestDb, DB_BOOT_TIMEOUT_MS } from './setupTestDb.js'
 import { createUser, createPatient, createAppointment, createEncounter as createEncounterFixture, createAiConsultation } from './factories.js'
@@ -96,6 +104,40 @@ describe('addDiagnosis / updateDiagnosis', () => {
 
     await expect(updateDiagnosis(encounter.id, dx.id, stranger.id, { diagnosis: 'Typhoid' })).rejects.toMatchObject({
       status: 404,
+    })
+  })
+
+  test('the assigned doctor can delete a diagnosis entered in error', async () => {
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounterFixture(doctor.id, patient.id)
+    const dx = await addDiagnosis(encounter.id, doctor.id, { diagnosis: 'Malaria' })
+
+    await deleteDiagnosis(encounter.id, dx.id, doctor.id)
+    expect(await Diagnosis.findById(dx.id)).toBeNull()
+  })
+
+  test('a different doctor cannot delete a diagnosis they don\'t own', async () => {
+    const owner = await createUser('DOCTOR')
+    const stranger = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounterFixture(owner.id, patient.id)
+    const dx = await addDiagnosis(encounter.id, owner.id, { diagnosis: 'Malaria' })
+
+    await expect(deleteDiagnosis(encounter.id, dx.id, stranger.id)).rejects.toMatchObject({ status: 404 })
+    expect(await Diagnosis.findById(dx.id)).not.toBeNull()
+  })
+
+  test('cannot delete a diagnosis on a COMPLETED encounter', async () => {
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounterFixture(doctor.id, patient.id)
+    const dx = await addDiagnosis(encounter.id, doctor.id, { diagnosis: 'Malaria' })
+    await completeEncounter(encounter.id, doctor.id)
+
+    await expect(deleteDiagnosis(encounter.id, dx.id, doctor.id)).rejects.toMatchObject({
+      status: 409,
+      code: 'ENCOUNTER_COMPLETED',
     })
   })
 })
