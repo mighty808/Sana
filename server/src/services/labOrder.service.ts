@@ -222,3 +222,18 @@ export async function updateLabOrder(id: string, doctorId: string, input: Update
   // Same always-populated contract as createLabOrder above.
   return order.populate([{ path: 'patient' }, { path: 'doctor', select: PUBLIC_USER_FIELDS }])
 }
+
+// Removes a lab order placed in error. Same ownership scoping and
+// still-ORDERED restriction as updateLabOrder — a doctor can call this off
+// a wrong or duplicate request, but once a lab tech has started on it
+// (PROCESSING/COMPLETED), there's real work in progress downstream that a
+// delete would silently orphan, so it's refused the same way an edit is.
+export async function deleteLabOrder(id: string, doctorId: string) {
+  const order = await LabOrder.findOne({ _id: id, doctor: doctorId })
+  if (!order) throw new AppError('Lab order not found', 404, 'LAB_ORDER_NOT_FOUND')
+  if (order.status !== 'ORDERED') {
+    throw new AppError('Cannot delete a lab order once results have started coming in', 409, 'LAB_ORDER_IN_PROGRESS')
+  }
+  await order.deleteOne()
+  return order
+}
