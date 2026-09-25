@@ -10,6 +10,7 @@ import { listPaymentsForInvoice } from './payment.service.js'
 import { getPatientForUser } from './patient.service.js'
 import { asPopulated } from '../utils/populate.js'
 import { isBrowsingBlocked } from '../utils/queryScope.js'
+import { mayReadEncounter } from './encounter.service.js'
 
 // Statuses that still owe money — used both for filtering and for the
 // shared outstanding-balance aggregate below.
@@ -183,16 +184,17 @@ export async function createInvoice(input: CreateInvoiceInput) {
   }
 }
 
-// Lists invoices. Admin, Patient, Lab Tech, and Pharmacist all hold
-// 'invoice.read' (see types/permissions.ts) — Doctor and Nurse have no
-// billing visibility at all. Admin sees every invoice, paginated so this
-// doesn't eventually return the entire collection in one response. Patient
-// only ever sees their own invoices — a hard rule, not just a default. Lab
-// Tech's and Pharmacist's `invoice.read` permission only exists to look up
-// one specific order's/prescription's invoice (see getInvoiceForLabOrder/
-// getInvoiceForPrescription below) — neither role browses the full ledger,
-// so this list function returns nothing for either rather than handing
-// back every invoice in the system.
+// Lists invoices. Admin, Patient, Lab Tech, Pharmacist, and Doctor all hold
+// 'invoice.read' (see types/permissions.ts) — Nurse has no billing
+// visibility at all. Admin sees every invoice, paginated so this doesn't
+// eventually return the entire collection in one response. Patient only
+// ever sees their own invoices — a hard rule, not just a default. Lab
+// Tech's, Pharmacist's, and Doctor's `invoice.read` permission only exists
+// to look up one specific order's/prescription's invoice (see
+// getInvoiceForLabOrder/getInvoiceForPrescription below, which is what the
+// "Bill this order" button actually calls) — none of the three browses the
+// full ledger, so this list function returns nothing for any of them
+// rather than handing back every patient's invoice in the system.
 export async function listInvoices(user: AuthedUser, opts: { page?: number; limit?: number } = {}) {
   if (user.role.name === 'PATIENT') {
     const patient = await getPatientForUser(user.id)
@@ -200,7 +202,7 @@ export async function listInvoices(user: AuthedUser, opts: { page?: number; limi
     return Invoice.find({ patient: patient.id }).sort({ createdAt: -1 })
   }
 
-  if (isBrowsingBlocked(user, ['LAB_TECH', 'PHARMACIST'])) return []
+  if (isBrowsingBlocked(user, ['LAB_TECH', 'PHARMACIST', 'DOCTOR'])) return []
 
   // ADMIN.
   const { skip, limit } = resolvePagination(opts)
@@ -267,14 +269,19 @@ export async function listInvoiceSummariesByPatient(opts: { page?: number; limit
 // a singular-field query would, so this still answers exactly "has *this*
 // order been billed," independent of which invoice it landed in — which
 // is all the "Bill this order" button's `!invoice` check actually needs.
-// Admin and Lab Tech can look up any lab order's invoice this way, the
-// same as getLabOrderById() in labOrder.service.ts lets them look up any
-// order directly by id: it's a direct lookup for an id the caller already
-// has, not a browsable list. A patient is different, though — a patient
-// could pass in any lab order id at all, so without a check here, they
-// could read a stranger's invoice. This enforces the same "only your own
-// invoices" rule that getInvoiceById() and listInvoices() already apply
-// for a patient.
+// Admin, Lab Tech, and Pharmacist can look up any lab order's invoice this
+// way, the same as getLabOrderById() in labOrder.service.ts lets them look
+// up any order directly by id: it's a direct lookup for an id the caller
+// already has, not a browsable list. A patient is different, though — a
+// patient could pass in any lab order id at all, so without a check here,
+// they could read a stranger's invoice. This enforces the same "only your
+// own invoices" rule that getInvoiceById() and listInvoices() already
+// apply for a patient. A doctor is scoped the same way getLabOrderById()
+// itself scopes them — via mayReadEncounter — since, unlike Lab
+// Tech/Pharmacist (who have no "own patients" concept, just the whole
+// queue), a doctor is restricted to their own patients everywhere else in
+// the app; without this, a doctor could pass in an arbitrary lab order id
+// and learn another doctor's patient's billing amount/status.
 export async function getInvoiceForLabOrder(labOrderId: string, user: AuthedUser) {
   assertValidObjectId(labOrderId, 'labOrder')
   const invoice = await Invoice.findOne({ labOrders: labOrderId, isActive: true })
@@ -285,12 +292,15 @@ export async function getInvoiceForLabOrder(labOrderId: string, user: AuthedUser
     if (!patient || invoice.patient.toString() !== patient.id) return null
   }
 
+  if (!(await mayReadEncounter(invoice.encounter.toString(), user))) return null
+
   return invoice
 }
 
 // Same as getInvoiceForLabOrder above, mirrored for prescriptions — lets
 // Admin/Pharmacist look up one prescription's invoice directly (e.g. to
-// disable "Bill this prescription" once it's already billed).
+// disable "Bill this prescription" once it's already billed), and scopes
+// a doctor to their own patients the same way.
 export async function getInvoiceForPrescription(prescriptionId: string, user: AuthedUser) {
   assertValidObjectId(prescriptionId, 'prescription')
   const invoice = await Invoice.findOne({ prescriptions: prescriptionId, isActive: true })
@@ -300,6 +310,8 @@ export async function getInvoiceForPrescription(prescriptionId: string, user: Au
     const patient = await getPatientForUser(user.id)
     if (!patient || invoice.patient.toString() !== patient.id) return null
   }
+
+  if (!(await mayReadEncounter(invoice.encounter.toString(), user))) return null
 
   return invoice
 }
