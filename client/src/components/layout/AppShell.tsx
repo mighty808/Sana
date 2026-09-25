@@ -64,6 +64,7 @@ function getDashboardBadge(to: string, summary: DashboardSummary | undefined): n
       if (to === '/lab-orders') return summary.pendingLabOrders
       if (to === '/ward-board') return summary.criticalPatients
       if (to === '/appointments') return summary.appointmentsToday
+      if (to === '/invoices') return summary.pendingInvoices
       return 0
     case 'DOCTOR':
       if (to === '/encounters') return summary.activeEncounters
