@@ -21,7 +21,16 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/useAuth'
-import { useEncounter, useAddVitals, useUpdateVitals, useAddDiagnosis, useUpdateDiagnosis, useCompleteEncounter } from './api'
+import {
+  useEncounter,
+  useAddVitals,
+  useUpdateVitals,
+  useDeleteVitals,
+  useAddDiagnosis,
+  useUpdateDiagnosis,
+  useDeleteDiagnosis,
+  useCompleteEncounter,
+} from './api'
 import type { UpdateVitalsInput } from './api'
 import { useCreateLabOrder, useLabOrdersForEncounter } from '@/features/labOrders/api'
 import { useAiConsultations, useAnalyzeVitals } from '@/features/ai/api'
@@ -442,6 +451,48 @@ function EditVitalsDialog({ encounterId, vitals }: { encounterId: string; vitals
   )
 }
 
+// Removes a vitals entry recorded in error. Same server-side guard as
+// EditVitalsDialog (open encounter, no owner-scoping), plus a confirm step
+// since this can't be undone the way a correction can — same AlertDialog
+// pattern as DeleteDiagnosisButton.
+function DeleteVitalsButton({ encounterId, vitals }: { encounterId: string; vitals: VitalSign }) {
+  const deleteVitals = useDeleteVitals(encounterId)
+
+  async function handleConfirm() {
+    try {
+      await deleteVitals.mutateAsync(vitals._id)
+      toast.success('Vitals entry deleted')
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Delete vitals" className="text-slate-500 hover:text-red-600">
+          <Trash2 className="size-3.5" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this vitals entry?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The most recently recorded set of vitals will be permanently removed from this encounter. This can't be
+            undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={handleConfirm} className="bg-red-600 hover:bg-red-700">
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
 // This is for nurses only, using the 'ai.analyzeVitals' permission rather
 // than the 'ai.consult' permission that only doctors have. It's a shortcut
 // into the same Sana AI system, using a fixed question about the vitals
@@ -595,6 +646,47 @@ function EditDiagnosisDialog({ encounterId, diagnosis }: { encounterId: string; 
         </Form>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// Removes a diagnosis entered in error. Same server-side guard as
+// EditDiagnosisDialog (own-doctor-only, open encounter), plus a confirm
+// step here since this one can't be undone the way a correction can —
+// same AlertDialog pattern as CompleteEncounterAction below.
+function DeleteDiagnosisButton({ encounterId, diagnosis }: { encounterId: string; diagnosis: Diagnosis }) {
+  const deleteDiagnosis = useDeleteDiagnosis(encounterId)
+
+  async function handleConfirm() {
+    try {
+      await deleteDiagnosis.mutateAsync(diagnosis._id)
+      toast.success('Diagnosis deleted')
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button type="button" size="icon-sm" variant="ghost" aria-label="Delete diagnosis" className="text-slate-500 hover:text-red-600">
+          <Trash2 className="size-3.5" />
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this diagnosis?</AlertDialogTitle>
+          <AlertDialogDescription>
+            "{diagnosis.diagnosis}" will be permanently removed from this encounter. This can't be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={handleConfirm} className="bg-red-600 hover:bg-red-700">
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   )
 }
 
@@ -953,11 +1045,16 @@ function CollapsibleCard({
   icon: Icon,
   iconClassName,
   title,
+  summary,
   children,
 }: {
   icon?: LucideIcon
   iconClassName?: string
   title: string
+  // A small plain-text line under the title, visible even while collapsed —
+  // same wording/style as the Lab orders card's own "No lab orders yet."
+  // text, just shown here up front instead of only after expanding.
+  summary: string
   children: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -969,9 +1066,12 @@ function CollapsibleCard({
           onClick={() => setOpen((o) => !o)}
           className="flex w-full items-center justify-between gap-2 text-left"
         >
-          <CardTitle className="flex items-center gap-2 text-base">
-            {Icon && <Icon className={`size-4 ${iconClassName ?? ''}`} />} {title}
-          </CardTitle>
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              {Icon && <Icon className={`size-4 ${iconClassName ?? ''}`} />} {title}
+            </CardTitle>
+            <p className="mt-0.5 text-xs text-slate-600">{summary}</p>
+          </div>
           <ChevronDown className={`size-4 shrink-0 text-slate-600 transition-transform ${open ? 'rotate-180' : ''}`} />
         </button>
       </CardHeader>
@@ -1319,8 +1419,15 @@ export function EncounterPage() {
                             </Badge>
                           )}
                         </div>
-                        {hasPermission('diagnosis.update') && encounter.status === 'IN_PROGRESS' && (
-                          <EditDiagnosisDialog encounterId={encounter._id} diagnosis={dx} />
+                        {encounter.status === 'IN_PROGRESS' && (
+                          <div className="flex items-center gap-1">
+                            {hasPermission('diagnosis.update') && (
+                              <EditDiagnosisDialog encounterId={encounter._id} diagnosis={dx} />
+                            )}
+                            {hasPermission('diagnosis.delete') && (
+                              <DeleteDiagnosisButton encounterId={encounter._id} diagnosis={dx} />
+                            )}
+                          </div>
                         )}
                       </div>
                       {dx.notes && <p className="mt-1 text-xs text-slate-600">{dx.notes}</p>}
@@ -1355,7 +1462,16 @@ export function EncounterPage() {
               only the assigned doctor gets the write form, but anyone who
               can open the encounter sees what's already been prescribed. */}
           {(hasPermission('prescription.create') || prescriptions.length > 0) && (
-            <CollapsibleCard icon={Pill} iconClassName="text-blue-600" title="Prescriptions">
+            <CollapsibleCard
+              icon={Pill}
+              iconClassName="text-blue-600"
+              title="Prescriptions"
+              summary={
+                prescriptions.length === 0
+                  ? 'No prescriptions on this encounter.'
+                  : `${prescriptions.length} prescription${prescriptions.length === 1 ? '' : 's'}`
+              }
+            >
               {prescriptions.length === 0 ? (
                 <p className="text-sm text-slate-600">No prescriptions on this encounter.</p>
               ) : (
@@ -1379,7 +1495,14 @@ export function EncounterPage() {
               referral sent to them has no reason to see a form that would
               only 404. */}
           {(hasPermission('referral.create') || referrals.length > 0) && (
-            <CollapsibleCard title="Referrals">
+            <CollapsibleCard
+              title="Referrals"
+              summary={
+                referrals.length === 0
+                  ? 'No referrals on this encounter.'
+                  : `${referrals.length} referral${referrals.length === 1 ? '' : 's'}`
+              }
+            >
               {referrals.length === 0 ? (
                 <p className="text-sm text-slate-600">No referrals on this encounter.</p>
               ) : (
@@ -1408,8 +1531,11 @@ export function EncounterPage() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Activity className="size-4 text-blue-600" /> Vitals
               </CardTitle>
-              {latestVitals && hasPermission('vitals.update') && encounter.status === 'IN_PROGRESS' && (
-                <EditVitalsDialog encounterId={encounter._id} vitals={latestVitals} />
+              {latestVitals && encounter.status === 'IN_PROGRESS' && (
+                <div className="flex items-center gap-1">
+                  {hasPermission('vitals.update') && <EditVitalsDialog encounterId={encounter._id} vitals={latestVitals} />}
+                  {hasPermission('vitals.delete') && <DeleteVitalsButton encounterId={encounter._id} vitals={latestVitals} />}
+                </div>
               )}
             </CardHeader>
             <CardContent className="space-y-4">
