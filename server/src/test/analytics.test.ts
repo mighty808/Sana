@@ -33,6 +33,7 @@ describe('getDashboard — ADMIN', () => {
     await createLabOrder(doctor.id, patientB.id, encounter.id) // ORDERED
     await createTestInvoice(patientB.id, encounter.id, { total: 100 }) // fully unpaid
     await createAiConsultation(encounter.id, doctor.id, patientB.id, { acuityLevel: 'CRITICAL' })
+    await createPrescription(doctor.id, patientB.id, encounter.id) // stays PRESCRIBED
 
     const result = await getDashboard(admin)
 
@@ -52,6 +53,7 @@ describe('getDashboard — ADMIN', () => {
     expect(r.outstandingBalance).toBe(100)
     expect(r.criticalPatients).toBe(1)
     expect(r.pendingInvoices).toBe(1)
+    expect(r.pendingPrescriptions).toBe(1)
   })
 })
 
@@ -68,6 +70,8 @@ describe('getDashboard — DOCTOR', () => {
     // UNREVIEWED by default; also CRITICAL, so this doubles as the
     // criticalPatients fixture below.
     await createAiConsultation(encounter.id, doctorA.id, patient.id, { acuityLevel: 'CRITICAL' })
+    await createPrescription(doctorA.id, patient.id, encounter.id) // stays PRESCRIBED
+    await createPrescription(doctorB.id, patient.id, encounter.id) // not doctorA's
 
     const result = await getDashboard(doctorA)
 
@@ -79,6 +83,7 @@ describe('getDashboard — DOCTOR', () => {
     expect(r.labOrdersAwaitingReview).toBe(1)
     expect(r.aiConsultationsUnreviewed).toBe(1)
     expect(r.criticalPatients).toBe(1)
+    expect(r.myPendingPrescriptions).toBe(1)
   })
 
   test("does not count another doctor's critical encounter", async () => {
@@ -133,6 +138,7 @@ describe('getDashboard — PATIENT', () => {
     const encounter = await createEncounter(doctor.id, patient.id)
     await createTestInvoice(patient.id, encounter.id, { total: 40 })
     await createNotification(patientUser.id) // unread by default (no readAt)
+    await createPrescription(doctor.id, patient.id, encounter.id) // stays PRESCRIBED
 
     const result = await getDashboard(patientUser)
 
@@ -141,12 +147,18 @@ describe('getDashboard — PATIENT', () => {
     expect(r.upcomingAppointments).toBe(1)
     expect(r.unreadNotifications).toBe(1)
     expect(r.outstandingBalance).toBe(40)
+    expect(r.pendingPrescriptions).toBe(1)
   })
 
   test('a PATIENT with no linked record gets all zeros, not an error', async () => {
     const patientUser = await createUser('PATIENT')
     const result = await getDashboard(patientUser)
-    expect(result).toMatchObject({ upcomingAppointments: 0, unreadNotifications: 0, outstandingBalance: 0 })
+    expect(result).toMatchObject({
+      upcomingAppointments: 0,
+      unreadNotifications: 0,
+      outstandingBalance: 0,
+      pendingPrescriptions: 0,
+    })
   })
 })
 
