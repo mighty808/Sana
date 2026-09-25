@@ -46,7 +46,7 @@ describe('listInvoices', () => {
     await expect(listInvoices(admin)).resolves.toHaveLength(2)
   })
 
-  test('LAB_TECH and PHARMACIST get an empty list — their invoice.read only exists for one-off lookups', async () => {
+  test('LAB_TECH, PHARMACIST, and DOCTOR get an empty list — their invoice.read only exists for one-off lookups', async () => {
     const doctor = await createUser('DOCTOR')
     const labTech = await createUser('LAB_TECH')
     const pharmacist = await createUser('PHARMACIST')
@@ -56,6 +56,11 @@ describe('listInvoices', () => {
 
     await expect(listInvoices(labTech)).resolves.toEqual([])
     await expect(listInvoices(pharmacist)).resolves.toEqual([])
+    // Even for their own invoice, placed on their own patient's encounter —
+    // a doctor's invoice.read only exists for the "Bill this order" one-off
+    // lookup (getInvoiceForLabOrder/getInvoiceForPrescription below), never
+    // to browse a list.
+    await expect(listInvoices(doctor)).resolves.toEqual([])
   })
 })
 
@@ -108,6 +113,31 @@ describe('getInvoiceForLabOrder / getInvoiceForPrescription', () => {
     await expect(getInvoiceForLabOrder(order.id, patientUser)).resolves.toBeNull()
   })
 
+  test('a DOCTOR can fetch the invoice for a lab order they placed themselves', async () => {
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    const order = await createLabOrder(doctor.id, patient.id, encounter.id)
+    const invoice = await createInvoice({ labOrder: order.id, items: [{ description: 'CBC', qty: 1, unitPrice: 50 }] })
+
+    const result = await getInvoiceForLabOrder(order.id, doctor)
+    expect(result?.id).toBe(invoice.id)
+  })
+
+  // Regression coverage: before this scoping was added, any doctor could
+  // pass an arbitrary lab order id and read a stranger's patient's billing
+  // amount/status, even with no relationship to that patient at all.
+  test('a DOCTOR gets null for another doctor\'s lab order invoice', async () => {
+    const doctorA = await createUser('DOCTOR')
+    const doctorB = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctorB.id, patient.id)
+    const order = await createLabOrder(doctorB.id, patient.id, encounter.id)
+    await createInvoice({ labOrder: order.id, items: [{ description: 'CBC', qty: 1, unitPrice: 50 }] })
+
+    await expect(getInvoiceForLabOrder(order.id, doctorA)).resolves.toBeNull()
+  })
+
   test('getInvoiceForPrescription mirrors the same rules for a prescription', async () => {
     const doctor = await createUser('DOCTOR')
     const admin = await createUser('ADMIN')
@@ -140,6 +170,18 @@ describe('getInvoiceForLabOrder / getInvoiceForPrescription', () => {
     // fails the ownership check on its own — covering the "no patient
     // record" branch of the same guard exercised by name above.
     await expect(getInvoiceForPrescription(rx.id, patientUser)).resolves.toBeNull()
+  })
+
+  test('a DOCTOR gets null for another doctor\'s prescription invoice', async () => {
+    const doctorA = await createUser('DOCTOR')
+    const doctorB = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctorB.id, patient.id)
+    const rx = await createPrescription(doctorB.id, patient.id, encounter.id)
+    const invoice = await createInvoice({ prescription: rx.id, items: [{ description: 'Amoxicillin', qty: 1, unitPrice: 50 }] })
+
+    await expect(getInvoiceForPrescription(rx.id, doctorA)).resolves.toBeNull()
+    await expect(getInvoiceForPrescription(rx.id, doctorB)).resolves.toMatchObject({ id: invoice.id })
   })
 })
 
