@@ -51,6 +51,7 @@ describe('getDashboard — ADMIN', () => {
     expect(r.pendingLabOrders).toBe(1)
     expect(r.outstandingBalance).toBe(100)
     expect(r.criticalPatients).toBe(1)
+    expect(r.pendingInvoices).toBe(1)
   })
 })
 
