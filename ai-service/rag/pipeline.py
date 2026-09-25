@@ -487,6 +487,30 @@ SYSTEM_PROMPT = (
     "No headers, no lengthy caveats beyond the one-sentence rule above."
 )
 
+# Used instead of SYSTEM_PROMPT when use_retrieval=False (currently just the
+# Lab Tech's "explain this result" shortcut — see ai.service.ts's
+# explainLabResult). Explaining what a test result means is general medical
+# knowledge, not something a clinical-guidelines knowledge base meaningfully
+# adds to, and every such query was hitting MIN_RELEVANCE_SCORE's "nothing
+# grounded" path anyway — always producing the same "no relevant passages"
+# non-answer before the backstop above existed to strip it. This prompt
+# never mentions retrieved passages at all, since there are none to speak of
+# in this mode.
+DIRECT_SYSTEM_PROMPT = (
+    "You are Sana AI, a clinical decision-SUPPORT assistant embedded in a "
+    "hospital system, explaining one lab test result in plain terms for a "
+    "laboratory technician to hand off to the doctor. You do not diagnose "
+    "and you do not replace clinical judgement. Given the test's name, "
+    "value, unit, reference range, and interpretation, explain in plain "
+    "language what the result indicates and what should be flagged for the "
+    "doctor's attention. Only state a specific numeric threshold, dose, or "
+    "named drug/regimen if it was given to you directly — otherwise speak "
+    "in general terms.\n\n"
+    "STRICT FORMAT: respond in 2-4 sentences of plain prose. Never restate "
+    "the question or the test data back — go straight to the explanation. "
+    "No headers, no lengthy caveats."
+)
+
 # Backstop for the prompts above: even with the "don't comment on the
 # retrieval itself" instruction, an LLM won't always obey it — this strips
 # out any sentence that slipped through anyway (e.g. "No strongly relevant
@@ -514,6 +538,7 @@ def consult(
     patient_context: dict,
     assess_acuity: bool = False,
     assess_differential: bool = False,
+    use_retrieval: bool = True,
 ) -> dict:
     """
     Runs the full RAG pipeline for one query, and returns a dict shaped to
@@ -533,52 +558,84 @@ def consult(
     guidance text. The two flags are mutually exclusive in practice — never
     set together by any caller — so assess_acuity is checked first and
     assess_differential only applies in the plain-guidance branch.
+
+    The plain-guidance branch (neither assess_acuity nor assess_differential)
+    is hybrid: whenever retrieval finds at least one passage clearing
+    MIN_RELEVANCE_SCORE, the answer is grounded in it via SYSTEM_PROMPT, same
+    as always. Whenever it finds nothing relevant, the model answers from its
+    own general medical knowledge via DIRECT_SYSTEM_PROMPT instead — decided
+    per call from what retrieval actually found, not a flag the caller sets
+    ahead of time. (The acuity/differential branches keep their existing
+    RAG-grounded prompts either way — those already have their own
+    appropriately-hedged instructions for the ungrounded case, since an
+    acuity/differential read has real safety weight behind it.)
+
+    use_retrieval=False (only the Lab Tech's "explain this result" shortcut
+    sets this — see ai.service.ts's explainLabResult) skips even attempting
+    retrieval: the vector store is never queried, so `sources`/
+    `ragMetadata.retrievalCount` come back empty and the plain-guidance
+    branch always takes the direct path above.
     """
     started = time.monotonic()
 
-    store = _get_vectorstore()
-    results = store.similarity_search_with_relevance_scores(query, k=TOP_K)
+    if use_retrieval:
+        store = _get_vectorstore()
+        results = store.similarity_search_with_relevance_scores(query, k=TOP_K)
 
-    # Only passages that clear MIN_RELEVANCE_SCORE are shown to the LLM as
-    # grounding material — a weak match is worse than no match, since the
-    # model tends to synthesize an answer from whatever it's given even
-    # when nothing retrieved is actually relevant to the question.
-    grounded_results = [(doc, score) for doc, score in results if score >= MIN_RELEVANCE_SCORE]
+        # Only passages that clear MIN_RELEVANCE_SCORE are shown to the LLM as
+        # grounding material — a weak match is worse than no match, since the
+        # model tends to synthesize an answer from whatever it's given even
+        # when nothing retrieved is actually relevant to the question.
+        grounded_results = [(doc, score) for doc, score in results if score >= MIN_RELEVANCE_SCORE]
 
-    # Logged before the LLM call rather than after, so a request that later
-    # times out still leaves a record of what was retrieved for it. The top
-    # score and the grounded count are the two numbers that explain almost
-    # every "why did it answer that?" question: a confident-sounding answer
-    # with 0 grounded passages is the pipeline working as designed and the
-    # knowledge base not covering the question.
-    top_score = max((score for _doc, score in results), default=None)
-    logger.info(
-        "consult: retrieved=%d grounded=%d top_score=%s acuity=%s differential=%s query=%.80r",
-        len(results),
-        len(grounded_results),
-        f"{top_score:.4f}" if top_score is not None else "n/a",
-        assess_acuity,
-        assess_differential,
-        query,
-    )
-    if not grounded_results:
-        # Not a warning: refusing to ground an out-of-scope question is the
-        # correct behaviour, and the prompt tells the model to say so. It is
-        # worth its own line because a sudden run of these is the signature of
-        # a broken embedding model or an empty store.
-        logger.info("consult: nothing cleared MIN_RELEVANCE_SCORE=%s", MIN_RELEVANCE_SCORE)
+        # Logged before the LLM call rather than after, so a request that later
+        # times out still leaves a record of what was retrieved for it. The top
+        # score and the grounded count are the two numbers that explain almost
+        # every "why did it answer that?" question: a confident-sounding answer
+        # with 0 grounded passages is the pipeline working as designed and the
+        # knowledge base not covering the question.
+        top_score = max((score for _doc, score in results), default=None)
+        logger.info(
+            "consult: retrieved=%d grounded=%d top_score=%s acuity=%s differential=%s query=%.80r",
+            len(results),
+            len(grounded_results),
+            f"{top_score:.4f}" if top_score is not None else "n/a",
+            assess_acuity,
+            assess_differential,
+            query,
+        )
+        if not grounded_results:
+            # Not a warning: refusing to ground an out-of-scope question is the
+            # correct behaviour. It is worth its own line because a sudden run
+            # of these is the signature of a broken embedding model or an
+            # empty store. The plain-consult branch below now answers this
+            # case with DIRECT_SYSTEM_PROMPT instead of the RAG-grounded one,
+            # rather than handing the model an empty "retrieved material"
+            # section and relying on it to say so gracefully.
+            logger.info("consult: nothing cleared MIN_RELEVANCE_SCORE=%s", MIN_RELEVANCE_SCORE)
+    else:
+        results = []
+        grounded_results = []
+        logger.info("consult: retrieval skipped (use_retrieval=False) query=%.80r", query)
 
-    context_block = "\n\n".join(
-        f"[{doc.metadata.get('title', 'Untitled')}]\n{doc.page_content}" for doc, _score in grounded_results
-    )
+    # Hybrid: grounded whenever retrieval actually found something relevant,
+    # direct otherwise — evaluated per-call from what retrieval actually
+    # found, not from the static use_retrieval flag alone. A caller that
+    # asked for retrieval but got nothing relevant still gets a genuine
+    # direct answer instead of a grounded prompt with an empty "retrieved
+    # material" section.
+    is_grounded = bool(grounded_results)
     context_text = _format_context(patient_context)
 
-    user_prompt = (
-        f"Patient context:\n{context_text}\n\n"
-        f"Retrieved reference material:\n"
-        f"{context_block or '(no passages in the knowledge base are strongly relevant to this question)'}\n\n"
-        f"Question: {query}"
-    )
+    if is_grounded:
+        context_block = "\n\n".join(
+            f"[{doc.metadata.get('title', 'Untitled')}]\n{doc.page_content}" for doc, _score in grounded_results
+        )
+        user_prompt = (
+            f"Patient context:\n{context_text}\n\n" f"Retrieved reference material:\n{context_block}\n\n" f"Question: {query}"
+        )
+    else:
+        user_prompt = f"Patient context:\n{context_text}\n\nQuestion: {query}"
 
     acuity_level: int | None = None
     acuity_reasons: list[str] = []
@@ -597,7 +654,7 @@ def consult(
         llm = _get_llm()
         completion = llm.invoke(
             [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": SYSTEM_PROMPT if is_grounded else DIRECT_SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ]
         )
