@@ -155,6 +155,14 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     'laborder.delete',
     'laborder.read',
     'labresult.read',
+    // Lets the doctor bill a lab order themselves, right after ordering
+    // it, the same "own workflow, own billing" shape LAB_TECH/PHARMACIST
+    // already have — Lab Tech and Admin can still bill it too.
+    // 'invoice.read' is needed alongside it so the "Bill this order"
+    // button correctly disappears once an invoice already exists, instead
+    // of only ever seeing `invoice: undefined` and offering to double-bill.
+    'invoice.create',
+    'invoice.read',
     'ai.consult',
     'ai.review',
     'notification.read',
