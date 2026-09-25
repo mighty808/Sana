@@ -1,18 +1,112 @@
+import { useState } from 'react'
 import { useParams, useSearchParams, Link } from 'react-router-dom'
-import { ArrowLeft, Phone, Mail, Droplet, ClipboardPlus, FlaskConical, Receipt, ArrowUpRight, Pill } from 'lucide-react'
-import { usePatientTimeline } from './api'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { ArrowLeft, Pencil, Phone, Mail, Droplet, ClipboardPlus, FlaskConical, Receipt, ArrowUpRight, Pill } from 'lucide-react'
+import { toast } from 'sonner'
+import { usePatientTimeline, useUpdatePatient } from './api'
+import { patientFormSchema, PatientFormFields, type PatientForm } from './PatientsPage'
+import type { Patient } from '@/types/patient'
+import { useAuth } from '@/features/auth/useAuth'
+import { getApiErrorMessage } from '@/lib/api'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { StatusBadge, statusBadgeClassName } from '@/components/StatusBadge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { EmptyState } from '@/components/EmptyState'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Form } from '@/components/ui/form'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { formatMoney } from '@/lib/money'
 import { formatShortDate } from '@/lib/date'
 import { calculateAge } from '@/lib/age'
 
+function toPatientFormDefaults(patient: Patient): PatientForm {
+  return {
+    firstName: patient.firstName,
+    lastName: patient.lastName,
+    dob: patient.dob.slice(0, 10),
+    gender: patient.gender,
+    phone: patient.phone ?? '',
+    email: patient.email ?? '',
+    bloodGroup: patient.bloodGroup,
+    emergencyContactName: patient.emergencyContact?.name ?? '',
+    emergencyContactPhone: patient.emergencyContact?.phone ?? '',
+  }
+}
+
+// Corrects a patient's demographic details — same 8-field form as
+// AddPatientDialog on the Patients list page (see PatientFormFields), just
+// pre-filled and calling PATCH instead of POST. Admin-only.
+function EditPatientDialog({ patient }: { patient: Patient }) {
+  const [open, setOpen] = useState(false)
+  const updatePatient = useUpdatePatient(patient._id)
+  const defaultValues = toPatientFormDefaults(patient)
+  const form = useForm<PatientForm>({ resolver: zodResolver(patientFormSchema), defaultValues })
+
+  async function onSubmit(values: PatientForm) {
+    try {
+      const { emergencyContactName, emergencyContactPhone, ...rest } = values
+      await updatePatient.mutateAsync({
+        ...rest,
+        email: values.email || undefined,
+        emergencyContact:
+          emergencyContactName || emergencyContactPhone
+            ? { name: emergencyContactName || undefined, phone: emergencyContactPhone || undefined }
+            : undefined,
+      })
+      toast.success('Patient details updated')
+      setOpen(false)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) form.reset(defaultValues)
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button type="button" size="sm" variant="outline">
+          <Pencil className="size-3.5" /> Edit
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit patient details</DialogTitle>
+          <DialogDescription>Corrects {patient.firstName} {patient.lastName}'s demographic details.</DialogDescription>
+        </DialogHeader>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+            <PatientFormFields control={form.control} />
+            <DialogFooter>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? 'Saving…' : 'Save changes'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function PatientDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const { hasPermission } = useAuth()
   // The timeline endpoint returns the patient together with their real
   // encounter, lab-order, and invoice history all in one call. Fetching the
   // patient separately through GET /patients/:id too would just be a second
@@ -100,6 +194,7 @@ export function PatientDetailPage() {
               </div>
             </div>
           </div>
+          {hasPermission('patient.update') && <EditPatientDialog patient={patient} />}
         </CardContent>
       </Card>
 
