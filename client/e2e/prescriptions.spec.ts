@@ -30,11 +30,16 @@ test('a pharmacist dispenses a prescription, and the prescribing doctor is notif
   await expect(pharmacistPage.getByText(`${prescription.prescriptionNumber} dispensed`)).toBeVisible()
 
   // Dispensing is one-way (dispensePrescription only accepts a PRESCRIBED
-  // one), and the queue reflects it. Checked on the row rather than on the
-  // dialog's button: the dialog renders from the row state captured when it
-  // opened, so the button is still on screen until it's reopened.
+  // one), and the queue reflects it. The grouped row itself has no Status
+  // column (only the per-prescription item inside the dialog does), and the
+  // dialog renders from a snapshot taken when it opened, so the button is
+  // still on screen until it's reopened — close and reopen it to see the
+  // updated badge.
   await pharmacistPage.keyboard.press('Escape')
-  await expect(row).toContainText('Dispensed')
+  await row.click()
+  const reopened = pharmacistPage.getByRole('dialog')
+  const item = reopened.locator('li', { hasText: prescription.prescriptionNumber })
+  await expect(item).toContainText('Dispensed')
 
   // --- The prescribing doctor hears about it ---
   await doctorPage.goto('/notifications')
@@ -57,10 +62,11 @@ test('an already-dispensed prescription offers no way to dispense it again', asy
 
   await pharmacistPage.goto('/prescriptions')
   const row = pharmacistPage.getByRole('row', { name: new RegExp(tag) })
-  await expect(row).toContainText('Dispensed')
+  await expect(row).toBeVisible()
 
   await row.click()
   const detail = pharmacistPage.getByRole('dialog')
-  await expect(detail.getByText(prescription.prescriptionNumber)).toBeVisible()
-  await expect(detail.getByRole('button', { name: 'Dispense' })).toHaveCount(0)
+  const item = detail.locator('li', { hasText: prescription.prescriptionNumber })
+  await expect(item).toContainText('Dispensed')
+  await expect(item.getByRole('button', { name: 'Dispense' })).toHaveCount(0)
 })
