@@ -34,6 +34,7 @@ import {
 import type { UpdateVitalsInput } from './api'
 import { useCreateLabOrder, useLabOrdersForEncounter } from '@/features/labOrders/api'
 import { EditLabOrderDialog, DeleteLabOrderButton, BillLabOrderButton } from '@/features/labOrders/LabOrdersPage'
+import { BillPrescriptionButton } from '@/features/prescriptions/PrescriptionsPage'
 import { useAiConsultations, useAnalyzeVitals } from '@/features/ai/api'
 import { useAiAction } from '@/features/ai/useAiAction'
 import { SanaAiPanel } from '@/features/ai/SanaAiPanel'
@@ -1084,13 +1085,17 @@ function CollapsibleCard({
 // Read-only — dispensing only ever happens from the Pharmacist's own
 // /prescriptions queue (see PrescriptionsPage.tsx), never from here.
 function PrescriptionsList({ prescriptions }: { prescriptions: Prescription[] }) {
+  const { hasPermission } = useAuth()
   return (
     <ul className="space-y-3">
       {prescriptions.map((rx) => (
         <li key={rx._id} className="rounded-lg border border-border p-3">
           <div className="flex items-center justify-between gap-2">
             <p className="font-mono text-xs text-slate-600">{rx.prescriptionNumber}</p>
-            <StatusBadge status={rx.status} />
+            <div className="flex items-center gap-1">
+              <StatusBadge status={rx.status} />
+              {hasPermission('invoice.create') && <BillPrescriptionButton prescription={rx} iconOnly />}
+            </div>
           </div>
           <ul className="mt-1.5 space-y-1">
             {rx.medications.map((m, i) => (
