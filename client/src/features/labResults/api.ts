@@ -39,6 +39,11 @@ export function useCreateLabResult() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['lab-results'], exact: false })
       queryClient.invalidateQueries({ queryKey: ['lab-orders'], exact: false })
+      // Entering a result can move the parent order out of ORDERED/into
+      // COMPLETED, which changes the sidebar's Lab Orders badge (see
+      // AppShell.tsx's getDashboardBadge) — releasing (below) doesn't
+      // touch that status, so it doesn't need this.
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }
