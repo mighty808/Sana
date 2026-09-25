@@ -15,6 +15,10 @@ export type DashboardSummary =
       // analytics.service.ts's countCriticalOpenEncounters. Powers the
       // sidebar's Ward Board badge (AppShell.tsx's getDashboardBadge).
       criticalPatients: number
+      // How many invoices are still UNPAID/PARTIALLY_PAID — a count,
+      // unlike outstandingBalance above (the money sum across them).
+      // Powers the sidebar's Invoices badge.
+      pendingInvoices: number
     }
   | {
       role: 'DOCTOR'
