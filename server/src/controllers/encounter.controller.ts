@@ -54,6 +54,13 @@ export async function updateVitals(req: Request, res: Response) {
   return ok(res, vitals)
 }
 
+// DELETE /encounters/:id/vitals/:vitalId — requires 'vitals.delete' (Nurse only).
+export async function deleteVitals(req: Request, res: Response) {
+  const vitals = await encounterService.deleteVitals(req.params.id as string, req.params.vitalId as string)
+  await auditService.logAction(req, req.user!.id, 'VITALS_DELETED', 'Encounter', req.params.id as string)
+  return ok(res, vitals)
+}
+
 // POST /encounters/:id/diagnoses — requires 'diagnosis.create' (Doctor only).
 export async function addDiagnosis(req: Request, res: Response) {
   const diagnosis = await encounterService.addDiagnosis(req.params.id as string, req.user!.id, req.body)
@@ -74,6 +81,20 @@ export async function updateDiagnosis(req: Request, res: Response) {
   )
   await auditService.logAction(req, req.user!.id, 'DIAGNOSIS_UPDATED', 'Encounter', req.params.id as string, {
     diagnosis: req.body.diagnosis,
+  })
+  return ok(res, diagnosis)
+}
+
+// DELETE /encounters/:id/diagnoses/:diagnosisId — requires 'diagnosis.delete'
+// (Doctor only, and only the doctor who added it).
+export async function deleteDiagnosis(req: Request, res: Response) {
+  const diagnosis = await encounterService.deleteDiagnosis(
+    req.params.id as string,
+    req.params.diagnosisId as string,
+    req.user!.id,
+  )
+  await auditService.logAction(req, req.user!.id, 'DIAGNOSIS_DELETED', 'Encounter', req.params.id as string, {
+    diagnosis: diagnosis.diagnosis,
   })
   return ok(res, diagnosis)
 }
