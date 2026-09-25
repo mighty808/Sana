@@ -8,6 +8,7 @@ import { AiConsultation, AI_ACUITY_LEVELS } from '../models/AiConsultation.js'
 import { LabResult } from '../models/LabResult.js'
 import { Prescription } from '../models/Prescription.js'
 import { Payment } from '../models/Payment.js'
+import { Invoice } from '../models/Invoice.js'
 import { Notification } from '../models/Notification.js'
 import { AppError } from '../utils/apiResponse.js'
 import type { AuthedUser } from '../types/user.js'
@@ -78,17 +79,38 @@ async function getAdminDashboard() {
   // handful of real hospital staff.
   const staffRoleIds = await Role.find({ name: { $ne: 'PATIENT' } }).distinct('_id')
 
-  const [totalPatients, totalStaffUsers, appointmentsToday, pendingLabOrders, outstandingBalance, criticalPatients] =
-    await Promise.all([
-      Patient.countDocuments({ status: 'ACTIVE' }),
-      User.countDocuments({ status: 'ACTIVE', role: { $in: staffRoleIds } }),
-      Appointment.countDocuments({ date: { $gte: start, $lt: end } }),
-      LabOrder.countDocuments({ status: { $in: ['ORDERED', 'PROCESSING'] } }),
-      sumOutstandingBalance(),
-      countCriticalOpenEncounters(),
-    ])
+  const [
+    totalPatients,
+    totalStaffUsers,
+    appointmentsToday,
+    pendingLabOrders,
+    outstandingBalance,
+    criticalPatients,
+    pendingInvoices,
+  ] = await Promise.all([
+    Patient.countDocuments({ status: 'ACTIVE' }),
+    User.countDocuments({ status: 'ACTIVE', role: { $in: staffRoleIds } }),
+    Appointment.countDocuments({ date: { $gte: start, $lt: end } }),
+    LabOrder.countDocuments({ status: { $in: ['ORDERED', 'PROCESSING'] } }),
+    sumOutstandingBalance(),
+    countCriticalOpenEncounters(),
+    // How many invoices are still open, as opposed to `outstandingBalance`
+    // above (the money sum across all of them) — a count is what the
+    // sidebar's Invoices badge needs (see AppShell.tsx's
+    // getDashboardBadge), since a currency amount doesn't fit the small
+    // numeric pill the badge renders.
+    Invoice.countDocuments({ status: { $in: ['UNPAID', 'PARTIALLY_PAID'] } }),
+  ])
 
-  return { totalPatients, totalStaffUsers, appointmentsToday, pendingLabOrders, outstandingBalance, criticalPatients }
+  return {
+    totalPatients,
+    totalStaffUsers,
+    appointmentsToday,
+    pendingLabOrders,
+    outstandingBalance,
+    criticalPatients,
+    pendingInvoices,
+  }
 }
 
 // The Doctor dashboard: this doctor's own workload. It shows how many
