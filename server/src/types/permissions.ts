@@ -15,8 +15,10 @@ export const PERMISSIONS = [
   'encounter.complete',
   'vitals.create',
   'vitals.update',
+  'vitals.delete',
   'diagnosis.create',
   'diagnosis.update',
+  'diagnosis.delete',
   'referral.create',
   'referral.read',
   'referral.update',
@@ -123,6 +125,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     'encounter.complete',
     'diagnosis.create',
     'diagnosis.update',
+    'diagnosis.delete',
     // Referring a patient to another doctor — its own permission set (not
     // folded into diagnosis.create/update) since a referral is a different
     // kind of action with a different lifecycle (PENDING -> ACKNOWLEDGED ->
@@ -179,6 +182,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     'encounter.read',
     'vitals.create',
     'vitals.update',
+    'vitals.delete',
     // Read-only visibility into lab orders — needed so the Encounter
     // page's Lab Results section (GET /lab-orders?encounter=) actually
     // loads for a nurse, not just a doctor/admin/lab tech. A nurse still
