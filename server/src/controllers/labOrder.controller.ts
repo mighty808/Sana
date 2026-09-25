@@ -47,3 +47,13 @@ export async function update(req: Request, res: Response) {
   })
   return ok(res, order)
 }
+
+// DELETE /lab-orders/:id — requires 'laborder.delete' (Doctor only, and only
+// the ordering doctor, and only while still ORDERED).
+export async function remove(req: Request, res: Response) {
+  const order = await labOrderService.deleteLabOrder(req.params.id as string, req.user!.id)
+  await auditService.logAction(req, req.user!.id, 'LAB_ORDER_DELETED', 'LabOrder', order.id, {
+    tests: order.tests.map((t) => t.testName),
+  })
+  return ok(res, order)
+}
