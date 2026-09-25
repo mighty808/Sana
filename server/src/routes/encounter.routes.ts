@@ -182,6 +182,41 @@ router.patch(
 
 /**
  * @openapi
+ * /encounters/{id}/vitals/{vitalId}:
+ *   delete:
+ *     summary: Remove a vitals entry recorded in error
+ *     tags: [Encounters]
+ *     description: >
+ *       Nurse only ('vitals.delete'). Not restricted to the nurse who
+ *       recorded it. This is blocked once the encounter is marked COMPLETED.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: vitalId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Deleted vitals entry.
+ *       404:
+ *         description: Encounter or vitals entry not found.
+ *       409:
+ *         description: Encounter is already completed.
+ */
+router.delete(
+  '/:id/vitals/:vitalId',
+  auth,
+  validateObjectId('id'),
+  validateObjectId('vitalId'),
+  requirePermission('vitals.delete'),
+  ctrl.deleteVitals,
+)
+
+/**
+ * @openapi
  * /encounters/{id}/diagnoses:
  *   post:
  *     summary: Add a diagnosis to an encounter
@@ -264,6 +299,43 @@ router.patch(
   requirePermission('diagnosis.update'),
   validate(updateDiagnosisSchema),
   ctrl.updateDiagnosis,
+)
+
+/**
+ * @openapi
+ * /encounters/{id}/diagnoses/{diagnosisId}:
+ *   delete:
+ *     summary: Remove a diagnosis entered in error
+ *     tags: [Encounters]
+ *     description: >
+ *       Doctor only ('diagnosis.delete'), and only the doctor who originally
+ *       added the diagnosis can delete it. A 404 response covers both cases:
+ *       the diagnosis doesn't exist, or it belongs to a different doctor.
+ *       This is blocked once the encounter is marked COMPLETED.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *       - in: path
+ *         name: diagnosisId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Deleted diagnosis.
+ *       404:
+ *         description: Encounter or diagnosis not found (or not yours).
+ *       409:
+ *         description: Encounter is already completed.
+ */
+router.delete(
+  '/:id/diagnoses/:diagnosisId',
+  auth,
+  validateObjectId('id'),
+  validateObjectId('diagnosisId'),
+  requirePermission('diagnosis.delete'),
+  ctrl.deleteDiagnosis,
 )
 
 /**
