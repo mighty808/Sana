@@ -33,6 +33,7 @@ import {
 } from './api'
 import type { UpdateVitalsInput } from './api'
 import { useCreateLabOrder, useLabOrdersForEncounter } from '@/features/labOrders/api'
+import { EditLabOrderDialog, DeleteLabOrderButton } from '@/features/labOrders/LabOrdersPage'
 import { useAiConsultations, useAnalyzeVitals } from '@/features/ai/api'
 import { useAiAction } from '@/features/ai/useAiAction'
 import { SanaAiPanel } from '@/features/ai/SanaAiPanel'
@@ -1248,6 +1249,12 @@ function LabOrdersCard({ encounterId, encounterStatus }: { encounterId: string; 
                   </div>
                 </div>
                 <p className="mt-1.5 text-sm text-slate-700">{order.tests.map((t) => t.testName).join(', ')}</p>
+                {order.status === 'ORDERED' && (hasPermission('laborder.update') || hasPermission('laborder.delete')) && (
+                  <div className="mt-2 flex items-center gap-1.5 border-t border-border pt-2">
+                    {hasPermission('laborder.update') && <EditLabOrderDialog order={order} />}
+                    {hasPermission('laborder.delete') && <DeleteLabOrderButton order={order} />}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
