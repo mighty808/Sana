@@ -1239,22 +1239,22 @@ function LabOrdersCard({ encounterId, encounterStatus }: { encounterId: string; 
               <li key={order._id} className="rounded-lg border border-border p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-mono text-xs text-slate-600">{order.labOrderNumber}</p>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
                     {order.priority === 'URGENT' && (
                       <Badge variant="outline" className="border-red-200 bg-red-50 text-[10px] text-red-700">
                         Urgent
                       </Badge>
                     )}
                     <StatusBadge status={order.status} />
+                    {order.status === 'ORDERED' && (
+                      <>
+                        {hasPermission('laborder.update') && <EditLabOrderDialog order={order} iconOnly />}
+                        {hasPermission('laborder.delete') && <DeleteLabOrderButton order={order} iconOnly />}
+                      </>
+                    )}
                   </div>
                 </div>
                 <p className="mt-1.5 text-sm text-slate-700">{order.tests.map((t) => t.testName).join(', ')}</p>
-                {order.status === 'ORDERED' && (hasPermission('laborder.update') || hasPermission('laborder.delete')) && (
-                  <div className="mt-2 flex items-center gap-1.5 border-t border-border pt-2">
-                    {hasPermission('laborder.update') && <EditLabOrderDialog order={order} />}
-                    {hasPermission('laborder.delete') && <DeleteLabOrderButton order={order} />}
-                  </div>
-                )}
               </li>
             ))}
           </ul>
