@@ -128,4 +128,29 @@ router.patch(
   ctrl.update,
 )
 
+/**
+ * @openapi
+ * /lab-orders/{id}:
+ *   delete:
+ *     summary: Remove a lab order placed in error
+ *     tags: [Lab]
+ *     description: >
+ *       Doctor only ('laborder.delete'), and only the doctor who placed the
+ *       order. This only works while the order is still in the ORDERED
+ *       state, same restriction as PATCH.
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Deleted lab order.
+ *       404:
+ *         description: Lab order not found (or not yours).
+ *       409:
+ *         description: Order already has results entered (LAB_ORDER_IN_PROGRESS).
+ */
+router.delete('/:id', auth, validateObjectId('id'), requirePermission('laborder.delete'), ctrl.remove)
+
 export default router
