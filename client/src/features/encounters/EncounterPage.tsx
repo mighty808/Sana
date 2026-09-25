@@ -33,7 +33,7 @@ import {
 } from './api'
 import type { UpdateVitalsInput } from './api'
 import { useCreateLabOrder, useLabOrdersForEncounter } from '@/features/labOrders/api'
-import { EditLabOrderDialog, DeleteLabOrderButton } from '@/features/labOrders/LabOrdersPage'
+import { EditLabOrderDialog, DeleteLabOrderButton, BillLabOrderButton } from '@/features/labOrders/LabOrdersPage'
 import { useAiConsultations, useAnalyzeVitals } from '@/features/ai/api'
 import { useAiAction } from '@/features/ai/useAiAction'
 import { SanaAiPanel } from '@/features/ai/SanaAiPanel'
@@ -1252,6 +1252,10 @@ function LabOrdersCard({ encounterId, encounterStatus }: { encounterId: string; 
                         {hasPermission('laborder.delete') && <DeleteLabOrderButton order={order} iconOnly />}
                       </>
                     )}
+                    {/* Not status-gated like edit/delete above — billing
+                        isn't restricted to ORDERED, and BillLabOrderButton
+                        already renders nothing once an invoice exists. */}
+                    {hasPermission('invoice.create') && <BillLabOrderButton order={order} iconOnly />}
                   </div>
                 </div>
                 <p className="mt-1.5 text-sm text-slate-700">{order.tests.map((t) => t.testName).join(', ')}</p>
