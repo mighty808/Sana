@@ -1,4 +1,4 @@
-import { createLabOrder, updateLabOrder, listLabOrders } from '../services/labOrder.service.js'
+import { createLabOrder, updateLabOrder, deleteLabOrder, listLabOrders } from '../services/labOrder.service.js'
 import { LabOrder } from '../models/LabOrder.js'
 import { refToIdString } from '../utils/populate.js'
 import { connectTestDb, clearTestDb, disconnectTestDb, DB_BOOT_TIMEOUT_MS } from './setupTestDb.js'
@@ -93,6 +93,42 @@ describe('updateLabOrder', () => {
     await LabOrder.updateOne({ _id: order.id }, { status: 'PROCESSING' })
 
     await expect(updateLabOrder(order.id, doctor.id, { tests: [{ testName: 'CBC' }] })).rejects.toMatchObject({
+      status: 409,
+      code: 'LAB_ORDER_IN_PROGRESS',
+    })
+  })
+})
+
+describe('deleteLabOrder', () => {
+  test('the ordering doctor can delete an order placed in error while still ORDERED', async () => {
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    const order = await createLabOrderFixture(doctor.id, patient.id, encounter.id)
+
+    await deleteLabOrder(order.id, doctor.id)
+    expect(await LabOrder.findById(order.id)).toBeNull()
+  })
+
+  test('a different doctor cannot delete someone else\'s order', async () => {
+    const owner = await createUser('DOCTOR')
+    const stranger = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(owner.id, patient.id)
+    const order = await createLabOrderFixture(owner.id, patient.id, encounter.id)
+
+    await expect(deleteLabOrder(order.id, stranger.id)).rejects.toMatchObject({ status: 404 })
+    expect(await LabOrder.findById(order.id)).not.toBeNull()
+  })
+
+  test('cannot delete an order once it is no longer ORDERED (results already coming in)', async () => {
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    const order = await createLabOrderFixture(doctor.id, patient.id, encounter.id)
+    await LabOrder.updateOne({ _id: order.id }, { status: 'PROCESSING' })
+
+    await expect(deleteLabOrder(order.id, doctor.id)).rejects.toMatchObject({
       status: 409,
       code: 'LAB_ORDER_IN_PROGRESS',
     })
