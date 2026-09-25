@@ -157,13 +157,24 @@ describe('GET /api/v1/invoices', () => {
   test('no token -> 401', async () => {
     expect((await request.get('/api/v1/invoices')).status).toBe(401)
   })
-  test('DOCTOR lacks invoice.read -> 403', async () => {
-    const doctor = await createUser('DOCTOR')
-    expect((await request.get('/api/v1/invoices').set(authHeader(doctor))).status).toBe(403)
+  test('NURSE lacks invoice.read -> 403', async () => {
+    const nurse = await createUser('NURSE')
+    expect((await request.get('/api/v1/invoices').set(authHeader(nurse))).status).toBe(403)
   })
   test('ADMIN holds invoice.read -> 200', async () => {
     const admin = await createUser('ADMIN')
     expect((await request.get('/api/v1/invoices').set(authHeader(admin))).status).toBe(200)
+  })
+  // DOCTOR holds invoice.read too (so it can't be used to prove the 403
+  // gate above), but only to look up one specific lab order's/
+  // prescription's invoice (see invoice.service.ts's listInvoices) — never
+  // to browse the full ledger, so the unscoped list clears the permission
+  // middleware but still comes back empty, same as LAB_TECH/PHARMACIST.
+  test('DOCTOR holds invoice.read but the unscoped list stays empty', async () => {
+    const doctor = await createUser('DOCTOR')
+    const res = await request.get('/api/v1/invoices').set(authHeader(doctor))
+    expect(res.status).toBe(200)
+    expect(res.body.data).toEqual([])
   })
 })
 
