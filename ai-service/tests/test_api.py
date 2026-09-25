@@ -171,7 +171,7 @@ def test_a_503_body_carries_no_traceback(client, api_key, monkeypatch):
 def test_patient_context_reaches_the_pipeline(client, api_key, monkeypatch):
     captured = {}
 
-    def _capture(query, patient_context, assess_acuity, assess_differential):
+    def _capture(query, patient_context, assess_acuity, assess_differential, _use_retrieval):
         captured["query"] = query
         captured["context"] = patient_context
         captured["assess_acuity"] = assess_acuity
@@ -200,7 +200,7 @@ def test_a_request_with_no_patient_context_sends_an_empty_dict(client, api_key, 
     must get {} rather than None, which _format_context can't index."""
     captured = {}
 
-    def _capture(_query, patient_context, _assess_acuity, _assess_differential):
+    def _capture(_query, patient_context, _assess_acuity, _assess_differential, _use_retrieval):
         captured["context"] = patient_context
         return _fake_pipeline_result()
 
@@ -216,7 +216,7 @@ def test_assess_acuity_defaults_to_false(client, api_key, monkeypatch):
     Express stores acuity only for NURSE_VITALS_ANALYSIS."""
     captured = {}
 
-    def _capture(_query, _context, assess_acuity, _assess_differential):
+    def _capture(_query, _context, assess_acuity, _assess_differential, _use_retrieval):
         captured["assess_acuity"] = assess_acuity
         return _fake_pipeline_result()
 
@@ -232,7 +232,7 @@ def test_assess_differential_defaults_to_false(client, api_key, monkeypatch):
     the flag must not silently get a differential-diagnosis read."""
     captured = {}
 
-    def _capture(_query, _context, _assess_acuity, assess_differential):
+    def _capture(_query, _context, _assess_acuity, assess_differential, _use_retrieval):
         captured["assess_differential"] = assess_differential
         return _fake_pipeline_result()
 
@@ -246,7 +246,7 @@ def test_assess_differential_defaults_to_false(client, api_key, monkeypatch):
 def test_assess_differential_reaches_the_pipeline(client, api_key, monkeypatch):
     captured = {}
 
-    def _capture(_query, _context, _assess_acuity, assess_differential):
+    def _capture(_query, _context, _assess_acuity, assess_differential, _use_retrieval):
         captured["assess_differential"] = assess_differential
         return _fake_pipeline_result()
 
@@ -255,6 +255,36 @@ def test_assess_differential_reaches_the_pipeline(client, api_key, monkeypatch):
     client.post("/v1/consult", json={"query": "What are the differentials?", "assessDifferential": True})
 
     assert captured["assess_differential"] is True
+
+
+def test_use_retrieval_defaults_to_true(client, api_key, monkeypatch):
+    """A request that omits the flag must still ground its answer — only
+    explainLabResult sends useRetrieval:false explicitly."""
+    captured = {}
+
+    def _capture(_query, _context, _assess_acuity, _assess_differential, use_retrieval):
+        captured["use_retrieval"] = use_retrieval
+        return _fake_pipeline_result()
+
+    monkeypatch.setattr(main, "run_rag_pipeline", _capture)
+
+    client.post("/v1/consult", json={"query": "A question"})
+
+    assert captured["use_retrieval"] is True
+
+
+def test_use_retrieval_false_reaches_the_pipeline(client, api_key, monkeypatch):
+    captured = {}
+
+    def _capture(_query, _context, _assess_acuity, _assess_differential, use_retrieval):
+        captured["use_retrieval"] = use_retrieval
+        return _fake_pipeline_result()
+
+    monkeypatch.setattr(main, "run_rag_pipeline", _capture)
+
+    client.post("/v1/consult", json={"query": "Explain this result", "useRetrieval": False})
+
+    assert captured["use_retrieval"] is False
 
 
 def test_a_differential_response_carries_the_list(client, api_key, monkeypatch):
