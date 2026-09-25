@@ -48,9 +48,10 @@ const REFERRAL_NOTIFICATION_TYPES = ['referral.created', 'referral.message.creat
 // Maps a nav item's route to whichever GET /analytics/dashboard field
 // represents "something pending/needs your attention" for it — reusing
 // the exact counts the Dashboard page itself already shows, rather than a
-// second query computing the same thing a different way. Only fields that
-// are genuinely an actionable count get a badge here: `appointmentsToday`
-// and `outstandingBalance` (money, not a count) are deliberately left out.
+// second query computing the same thing a different way. `outstandingBalance`
+// (money, not a count) is the one field deliberately left out everywhere —
+// every other role's own dashboard field gets a badge here as long as a
+// matching nav item exists for it.
 // Keyed by role first since the same route means a different field
 // depending on who's looking (e.g. '/lab-orders' is `pendingOrders` for a
 // Lab Tech but `labOrdersAwaitingReview` for a Doctor) — `summary.role`
@@ -60,16 +61,23 @@ function getDashboardBadge(to: string, summary: DashboardSummary | undefined): n
   if (!summary) return 0
   switch (summary.role) {
     case 'ADMIN':
-      return to === '/lab-orders' ? summary.pendingLabOrders : 0
+      if (to === '/lab-orders') return summary.pendingLabOrders
+      if (to === '/ward-board') return summary.criticalPatients
+      if (to === '/appointments') return summary.appointmentsToday
+      return 0
     case 'DOCTOR':
       if (to === '/encounters') return summary.activeEncounters
       if (to === '/lab-orders') return summary.labOrdersAwaitingReview
+      if (to === '/ward-board') return summary.criticalPatients
+      if (to === '/appointments') return summary.appointmentsToday
       return 0
     case 'NURSE':
       // The actual "needs a nurse" queue — checked in, but no encounter
       // opened yet — and the "Start encounter" action lives on this same
       // Appointments page, so that's where the badge belongs too.
-      return to === '/appointments' ? summary.vitalsPendingCount : 0
+      if (to === '/appointments') return summary.vitalsPendingCount
+      if (to === '/ward-board') return summary.criticalPatients
+      return 0
     case 'PATIENT':
       return to === '/appointments' ? summary.upcomingAppointments : 0
     case 'LAB_TECH':
