@@ -10,7 +10,7 @@ separately in tests/test_retrieval.py.
 
 import json
 
-from rag.pipeline import MIN_RELEVANCE_SCORE, consult
+from rag.pipeline import DIRECT_SYSTEM_PROMPT, MIN_RELEVANCE_SCORE, SYSTEM_PROMPT, consult
 
 # Scores chosen to sit either side of MIN_RELEVANCE_SCORE without depending on
 # its exact value, so tuning the threshold doesn't invalidate these tests.
@@ -59,19 +59,55 @@ def test_below_threshold_passages_are_still_returned_as_sources(fake_store, fake
     assert result["ragMetadata"]["retrievalCount"] == 2
 
 
-def test_no_relevant_passages_tells_the_model_so_explicitly(fake_store, fake_llm):
+def test_no_relevant_passages_falls_back_to_a_direct_answer(fake_store, fake_llm):
     """
-    With everything filtered out the context block is empty. The prompt must
-    say that in words rather than leave a blank section, because a blank one
-    reads as "no material was retrieved for you" — which the model answers from
-    its own parametric memory, exactly what RAG is here to prevent.
+    Hybrid behaviour: with everything filtered out, the pipeline stops
+    pretending to ground the answer and switches to DIRECT_SYSTEM_PROMPT — no
+    "Retrieved reference material" section at all, rather than an empty one
+    the model has to explain away. This replaced an earlier design where the
+    prompt just said "(no passages are strongly relevant)" and left the
+    RAG-grounded SYSTEM_PROMPT in charge of the answer anyway; that
+    consistently produced a "no relevant passages" non-answer instead of an
+    actual explanation.
     """
     fake_store([("Unrelated.", "Ghana STG — Burns", BELOW)])
     llm = fake_llm()
 
     consult("What is the best pizza topping?", {})
 
-    assert "no passages in the knowledge base are strongly relevant" in llm.last_user_prompt
+    assert "Retrieved reference material" not in llm.last_user_prompt
+    assert llm.last_system_prompt == DIRECT_SYSTEM_PROMPT
+
+
+def test_grounded_passages_still_use_the_rag_prompt(fake_store, fake_llm):
+    """The other half of the hybrid: when retrieval does find something
+    relevant, the answer stays grounded exactly as before."""
+    fake_store([("Malaria is treated with artemisinin combination therapy.", "Ghana STG — Malaria", ABOVE)])
+    llm = fake_llm()
+
+    consult("How is malaria treated?", {})
+
+    assert "Retrieved reference material" in llm.last_user_prompt
+    assert llm.last_system_prompt == SYSTEM_PROMPT
+
+
+def test_use_retrieval_false_never_touches_the_vector_store(fake_store, fake_llm):
+    """use_retrieval=False skips retrieval outright, even when the store
+    would have returned something relevant — the caller (only
+    explainLabResult today) has decided grounding isn't worth attempting at
+    all, not just that this particular query came up empty."""
+    store = fake_store([("Malaria is treated with artemisinin combination therapy.", "Ghana STG — Malaria", ABOVE)])
+    llm = fake_llm()
+
+    result = consult("Explain this result", {}, use_retrieval=False)
+
+    assert llm.last_system_prompt == DIRECT_SYSTEM_PROMPT
+    assert "Retrieved reference material" not in llm.last_user_prompt
+    assert result["sources"] == []
+    assert result["ragMetadata"]["retrievalCount"] == 0
+    # Confirms the store's own search method was never called, not just that
+    # its result was discarded.
+    assert store.query_count == 0
 
 
 def test_patient_context_is_included_in_the_prompt(fake_store, fake_llm):
