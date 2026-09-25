@@ -13,6 +13,7 @@ import {
   Printer,
   Pencil,
   Trash2,
+  Receipt,
   ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -566,6 +567,49 @@ export function DeleteLabOrderButton({
   )
 }
 
+// Bills this order at Sana's standard per-test fee — the same auto-filled
+// pricing Admin's "Create invoice" flow uses, just triggered from here by
+// whoever is actually processing the order (doctor, lab tech, or admin —
+// all three hold 'invoice.create'). Self-contained: fetches its own
+// already-billed state and renders nothing once an invoice exists, so
+// every caller just needs to gate on the 'invoice.create' permission and
+// nothing else.
+export function BillLabOrderButton({ order, iconOnly }: { order: LabOrder; iconOnly?: boolean }) {
+  const createInvoice = useCreateInvoice()
+  const { data: invoice } = useInvoiceForLabOrder(order._id)
+
+  if (invoice) return null
+
+  async function handleBill() {
+    try {
+      const created = await createInvoice.mutateAsync({
+        labOrder: order._id,
+        items: order.tests.map((t) => ({ description: t.testName, qty: 1, unitPrice: STANDARD_LAB_TEST_FEE })),
+      })
+      toast.success(`${created.invoiceNumber} created`)
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  return iconOnly ? (
+    <Button
+      type="button"
+      size="icon-sm"
+      variant="ghost"
+      aria-label="Bill this order"
+      disabled={createInvoice.isPending}
+      onClick={handleBill}
+    >
+      <Receipt className="size-3.5" />
+    </Button>
+  ) : (
+    <Button type="button" size="sm" variant="outline" disabled={createInvoice.isPending} onClick={handleBill}>
+      Bill this order
+    </Button>
+  )
+}
+
 // Clicking a lab order row opens this dialog, which shows the patient's details
 // and everything entered against the order so far, all in one place. The
 // "Release" button sits directly next to each ENTERED result here, rather than
@@ -581,7 +625,6 @@ function LabOrderDetailDialog({
 }) {
   const { data, isLoading } = useLabOrder(orderId ?? undefined)
   const releaseResult = useReleaseLabResult()
-  const createInvoice = useCreateInvoice()
   const { hasPermission } = useAuth()
   const canRelease = hasPermission('labresult.release')
   const canEnter = hasPermission('labresult.create')
@@ -617,23 +660,6 @@ function LabOrderDetailDialog({
     }
   }
 
-  // Bills this order at Sana's standard per-test fee. This is the same
-  // auto-filled pricing that Admin's "Create invoice" flow uses, just triggered
-  // from here by whoever is actually processing the order (typically a Lab
-  // Tech), right after the doctor requested it, instead of waiting for an
-  // Admin to pick it up later.
-  async function handleBill(order: LabOrder) {
-    try {
-      const invoice = await createInvoice.mutateAsync({
-        labOrder: order._id,
-        items: order.tests.map((t) => ({ description: t.testName, qty: 1, unitPrice: STANDARD_LAB_TEST_FEE })),
-      })
-      toast.success(`${invoice.invoiceNumber} created`)
-    } catch (err) {
-      toast.error(getApiErrorMessage(err))
-    }
-  }
-
   return (
     <>
       <Dialog open={orderId !== null} onOpenChange={onOpenChange}>
@@ -655,17 +681,7 @@ function LabOrderDetailDialog({
                   {canDeleteOrder && data.order.status === 'ORDERED' && (
                     <DeleteLabOrderButton order={data.order} onDeleted={() => onOpenChange(false)} />
                   )}
-                  {canBill && !invoice && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={createInvoice.isPending}
-                      onClick={() => handleBill(data.order)}
-                    >
-                      Bill this order
-                    </Button>
-                  )}
+                  {canBill && <BillLabOrderButton order={data.order} />}
                   <Button type="button" size="sm" variant="outline" onClick={() => window.print()}>
                     <Printer className="size-4" /> Print / Save as PDF
                   </Button>
