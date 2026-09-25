@@ -2,10 +2,22 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { FlaskConical, PlusCircle, Send, Sparkles, Clock, Hourglass, AlertTriangle, Printer, Pencil, ChevronDown } from 'lucide-react'
+import {
+  FlaskConical,
+  PlusCircle,
+  Send,
+  Sparkles,
+  Clock,
+  Hourglass,
+  AlertTriangle,
+  Printer,
+  Pencil,
+  Trash2,
+  ChevronDown,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/features/auth/useAuth'
-import { useLabOrders, useLabOrder, useUpdateLabOrder } from './api'
+import { useLabOrders, useLabOrder, useUpdateLabOrder, useDeleteLabOrder } from './api'
 import { useCreateLabResult, useReleaseLabResult } from '@/features/labResults/api'
 import { useInvoiceForLabOrder, useCreateInvoice } from '@/features/invoices/api'
 import { useExplainLabResult, useLabOrderResultAnalyses } from '@/features/ai/api'
@@ -40,6 +52,17 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog'
 
 const resultFormSchema = z.object({
   testName: z.string().min(1, 'Select a test'),
@@ -482,6 +505,47 @@ function EditLabOrderDialog({ order }: { order: LabOrder }) {
   )
 }
 
+// Removes a lab order placed in error. Same still-ORDERED restriction as
+// EditLabOrderDialog, plus a confirm step since deletion can't be undone
+// the way a correction can.
+function DeleteLabOrderButton({ order, onDeleted }: { order: LabOrder; onDeleted: () => void }) {
+  const deleteLabOrder = useDeleteLabOrder()
+
+  async function handleConfirm() {
+    try {
+      await deleteLabOrder.mutateAsync(order._id)
+      toast.success(`${order.labOrderNumber} deleted`)
+      onDeleted()
+    } catch (err) {
+      toast.error(getApiErrorMessage(err))
+    }
+  }
+
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>
+        <Button type="button" size="sm" variant="outline" className="text-slate-600 hover:text-red-600">
+          <Trash2 className="size-3.5" /> Delete
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete this lab order?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {order.labOrderNumber} will be permanently removed. This can't be undone.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogAction onClick={handleConfirm} className="bg-red-600 hover:bg-red-700">
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
 // Clicking a lab order row opens this dialog, which shows the patient's details
 // and everything entered against the order so far, all in one place. The
 // "Release" button sits directly next to each ENTERED result here, rather than
@@ -505,6 +569,7 @@ function LabOrderDetailDialog({
   const canSeePayment = hasPermission('invoice.read')
   const canBill = hasPermission('invoice.create')
   const canEditOrder = hasPermission('laborder.update')
+  const canDeleteOrder = hasPermission('laborder.delete')
   const { data: invoice } = useInvoiceForLabOrder(canSeePayment ? data?.order._id : undefined)
   const { data: labOrderAnalyses } = useLabOrderResultAnalyses(canExplain ? (orderId ?? undefined) : undefined)
   const analysesByResultId = useMemo(() => {
@@ -567,6 +632,9 @@ function LabOrderDetailDialog({
                   </DialogTitle>
                   {canSeePayment && <StatusBadge status={invoice ? invoice.status : 'no invoice yet'} />}
                   {canEditOrder && data.order.status === 'ORDERED' && <EditLabOrderDialog order={data.order} />}
+                  {canDeleteOrder && data.order.status === 'ORDERED' && (
+                    <DeleteLabOrderButton order={data.order} onDeleted={() => onOpenChange(false)} />
+                  )}
                   {canBill && !invoice && (
                     <Button
                       type="button"
