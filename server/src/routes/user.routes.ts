@@ -68,11 +68,12 @@ router.post('/', auth, requirePermission('user.manage'), validate(createUserSche
  * @openapi
  * /users/doctors:
  *   get:
- *     summary: List active doctor accounts (for the appointment-booking picker)
+ *     summary: List active doctor accounts (for the appointment-booking/referral picker)
  *     tags: [Users]
  *     description: >
- *       Requires 'user.readDoctors' (Nurse only) — a narrower lookup than
- *       GET /users, which stays Admin-only.
+ *       Requires 'user.readDoctors' (Nurse, for appointment booking; Doctor,
+ *       for the "refer to" picker) — a narrower lookup than GET /users,
+ *       which stays Admin-only.
  *     responses:
  *       200:
  *         description: List of public doctor profiles.
