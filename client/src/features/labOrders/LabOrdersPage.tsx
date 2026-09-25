@@ -400,7 +400,7 @@ type EditLabOrderForm = z.infer<typeof editLabOrderFormSchema>
 // is pre-filled from the current test names rather than starting blank —
 // same comma/newline-separated shape as the doctor's original "Request lab
 // tests" form.
-export function EditLabOrderDialog({ order }: { order: LabOrder }) {
+export function EditLabOrderDialog({ order, iconOnly }: { order: LabOrder; iconOnly?: boolean }) {
   const [open, setOpen] = useState(false)
   const updateLabOrder = useUpdateLabOrder()
   const defaultValues = {
@@ -437,9 +437,15 @@ export function EditLabOrderDialog({ order }: { order: LabOrder }) {
       }}
     >
       <DialogTrigger asChild>
-        <Button type="button" size="sm" variant="outline">
-          <Pencil className="size-3.5" /> Edit order
-        </Button>
+        {iconOnly ? (
+          <Button type="button" size="icon-sm" variant="ghost" aria-label="Edit order">
+            <Pencil className="size-3.5" />
+          </Button>
+        ) : (
+          <Button type="button" size="sm" variant="outline">
+            <Pencil className="size-3.5" /> Edit order
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -508,7 +514,15 @@ export function EditLabOrderDialog({ order }: { order: LabOrder }) {
 // Removes a lab order placed in error. Same still-ORDERED restriction as
 // EditLabOrderDialog, plus a confirm step since deletion can't be undone
 // the way a correction can.
-export function DeleteLabOrderButton({ order, onDeleted }: { order: LabOrder; onDeleted?: () => void }) {
+export function DeleteLabOrderButton({
+  order,
+  onDeleted,
+  iconOnly,
+}: {
+  order: LabOrder
+  onDeleted?: () => void
+  iconOnly?: boolean
+}) {
   const deleteLabOrder = useDeleteLabOrder()
 
   async function handleConfirm() {
@@ -524,9 +538,15 @@ export function DeleteLabOrderButton({ order, onDeleted }: { order: LabOrder; on
   return (
     <AlertDialog>
       <AlertDialogTrigger asChild>
-        <Button type="button" size="sm" variant="outline" className="text-slate-600 hover:text-red-600">
-          <Trash2 className="size-3.5" /> Delete
-        </Button>
+        {iconOnly ? (
+          <Button type="button" size="icon-sm" variant="ghost" aria-label="Delete order" className="text-slate-500 hover:text-red-600">
+            <Trash2 className="size-3.5" />
+          </Button>
+        ) : (
+          <Button type="button" size="sm" variant="outline" className="text-slate-600 hover:text-red-600">
+            <Trash2 className="size-3.5" /> Delete
+          </Button>
+        )}
       </AlertDialogTrigger>
       <AlertDialogContent>
         <AlertDialogHeader>
