@@ -122,7 +122,7 @@ async function buildAnonymizedContext(
 async function callAiService(
   query: string,
   context: Record<string, unknown>,
-  options: { assessAcuity?: boolean; assessDifferential?: boolean } = {},
+  options: { assessAcuity?: boolean; assessDifferential?: boolean; useRetrieval?: boolean } = {},
 ): Promise<{ response: ConsultResponse; responseTimeMs: number }> {
   const startedAt = Date.now()
   let aiResponse: ConsultResponse
@@ -142,6 +142,7 @@ async function callAiService(
         patientContext: context,
         assessAcuity: options.assessAcuity ?? false,
         assessDifferential: options.assessDifferential ?? false,
+        useRetrieval: options.useRetrieval ?? true,
       }),
       // Keeps a slow/hung AI service from holding the request open
       // indefinitely — 20s is generous for a RAG pipeline call but still
@@ -456,6 +457,11 @@ const LAB_RESULT_QUERY = 'Explain this lab result in plain terms — what does i
 // entered result in plain terms. This never sends the patient's name —
 // only the result's own fields (test name, value, unit, reference range,
 // interpretation) plus whatever optional notes the lab tech typed.
+// Uses the AI service's default useRetrieval:true — retrieval is still
+// attempted (grounds the answer when the knowledge base actually has
+// something relevant to this test), but the ai-service pipeline now falls
+// back to a direct, ungrounded answer on its own whenever nothing clears
+// the relevance threshold, rather than always skipping retrieval outright.
 export async function explainLabResult(labResultId: string, labTechId: string, notes?: string) {
   assertValidObjectId(labResultId, 'labResult')
 
