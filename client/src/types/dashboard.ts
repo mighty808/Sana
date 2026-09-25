@@ -11,6 +11,10 @@ export type DashboardSummary =
       appointmentsToday: number
       pendingLabOrders: number
       outstandingBalance: number
+      // Open encounters whose latest Sana AI acuity read is CRITICAL — see
+      // analytics.service.ts's countCriticalOpenEncounters. Powers the
+      // sidebar's Ward Board badge (AppShell.tsx's getDashboardBadge).
+      criticalPatients: number
     }
   | {
       role: 'DOCTOR'
@@ -19,6 +23,7 @@ export type DashboardSummary =
       activeEncounters: number
       labOrdersAwaitingReview: number
       aiConsultationsUnreviewed: number
+      criticalPatients: number
     }
   | {
       // The Nurse is the front-line operator, handling registration,
@@ -29,6 +34,7 @@ export type DashboardSummary =
       patientsRegisteredToday: number
       appointmentsCheckedInToday: number
       vitalsPendingCount: number
+      criticalPatients: number
     }
   | {
       role: 'PATIENT'
