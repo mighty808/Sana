@@ -391,6 +391,21 @@ export async function updateVitals(encounterId: string, vitalId: string, input: 
   return vitals
 }
 
+// Removes a vitals entry recorded in error. Same closed-record guard and
+// no-owner-scoping rule as updateVitals — any nurse holding
+// 'vitals.delete' can remove any vitals entry on an encounter that's
+// still open, not just the one who recorded it.
+export async function deleteVitals(encounterId: string, vitalId: string) {
+  const encounter = await Encounter.findById(encounterId)
+  if (!encounter) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
+  assertEncounterOpen(encounter, 'delete vitals on')
+
+  const vitals = await VitalSign.findOneAndDelete({ _id: vitalId, encounter: encounterId })
+  if (!vitals) throw new AppError('Vitals entry not found', 404, 'VITALS_NOT_FOUND')
+  broadcastWardBoardChanged(encounterId)
+  return vitals
+}
+
 interface DiagnosisInput {
   diagnosis: string
   diagnosisCode?: string
@@ -461,6 +476,20 @@ export async function updateDiagnosis(
   if (!diagnosis) throw new AppError('Diagnosis not found', 404, 'DIAGNOSIS_NOT_FOUND')
   diagnosis.set(input)
   await diagnosis.save()
+  broadcastWardBoardChanged(encounterId)
+  return diagnosis
+}
+
+// Removes a diagnosis entered in error — same ownership and closed-record
+// guards as updateDiagnosis (a wrong diagnosis deserves the same correction
+// rights as a mistyped one), just deleting rather than correcting it.
+export async function deleteDiagnosis(encounterId: string, diagnosisId: string, doctorId: string) {
+  const encounter = await Encounter.findOne({ _id: encounterId, doctor: doctorId })
+  if (!encounter) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
+  assertEncounterOpen(encounter, 'delete a diagnosis on')
+
+  const diagnosis = await Diagnosis.findOneAndDelete({ _id: diagnosisId, encounter: encounterId, doctor: doctorId })
+  if (!diagnosis) throw new AppError('Diagnosis not found', 404, 'DIAGNOSIS_NOT_FOUND')
   broadcastWardBoardChanged(encounterId)
   return diagnosis
 }
