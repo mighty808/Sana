@@ -71,8 +71,14 @@ export function useAnalyzeVitals() {
       const res = await api.post<ApiSuccess<AiConsultation>>('/ai/analyze-vitals', input)
       return res.data.data
     },
-    onSuccess: (_data, variables) =>
-      queryClient.invalidateQueries({ queryKey: ['ai-consultations', variables.encounter] }),
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['ai-consultations', variables.encounter] })
+      // A fresh acuity read can flip criticalPatients, which drives the
+      // sidebar's Ward Board badge (see AppShell.tsx's getDashboardBadge)
+      // — keeps it live in-session the same way the other badge-affecting
+      // mutations do.
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
 
