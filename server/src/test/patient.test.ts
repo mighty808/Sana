@@ -91,13 +91,26 @@ describe('getPatientTimeline', () => {
     expect(timeline.invoices).toHaveLength(1)
   })
 
-  test('a DOCTOR (no invoice.read) sees everything except invoices', async () => {
+  test('a DOCTOR (holds invoice.read, for billing lab orders) sees invoices too', async () => {
     const doctor = await createUser('DOCTOR')
     const patient = await createPatientFixture()
     const encounter = await createEncounter(doctor.id, patient.id)
     await createTestInvoice(patient.id, encounter.id)
 
     const timeline = await getPatientTimeline(patient.id, doctor)
+
+    expect(timeline.encounters).toHaveLength(1)
+    expect(timeline.invoices).toHaveLength(1)
+  })
+
+  test('a NURSE (no invoice.read) sees everything except invoices', async () => {
+    const doctor = await createUser('DOCTOR')
+    const nurse = await createUser('NURSE')
+    const patient = await createPatientFixture()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    await createTestInvoice(patient.id, encounter.id)
+
+    const timeline = await getPatientTimeline(patient.id, nurse)
 
     expect(timeline.encounters).toHaveLength(1)
     expect(timeline.invoices).toEqual([])
