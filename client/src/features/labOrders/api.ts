@@ -59,7 +59,13 @@ export function useCreateLabOrder() {
       const res = await api.post<ApiSuccess<LabOrder>>('/lab-orders', input)
       return res.data.data
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lab-orders'], exact: false }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lab-orders'], exact: false })
+      // A fresh order changes the sidebar's Lab Orders badge count (see
+      // AppShell.tsx's getDashboardBadge) — without this it wouldn't
+      // update until the next window-focus refetch.
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
 
