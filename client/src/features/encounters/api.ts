@@ -131,7 +131,13 @@ export function useCreateEncounter() {
       const res = await api.post<ApiSuccess<Encounter>>('/encounters', input)
       return res.data.data
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['encounters', 'list'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['encounters', 'list'] })
+      // A newly-opened encounter changes both the Nurse's Appointments
+      // badge (vitalsPendingCount drops) and the Doctor's Encounters badge
+      // (activeEncounters rises) — see AppShell.tsx's getDashboardBadge.
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    },
   })
 }
 
@@ -225,6 +231,9 @@ export function useCompleteEncounter(encounterId: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['encounters', 'detail', encounterId] })
       queryClient.invalidateQueries({ queryKey: ['encounters', 'list'] })
+      // Completing it drops the Doctor sidebar's Encounters badge
+      // (activeEncounters) — see AppShell.tsx's getDashboardBadge.
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
     },
   })
 }
