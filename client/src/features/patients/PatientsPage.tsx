@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useForm } from 'react-hook-form'
+import { useForm, type Control } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Search, Plus, Users, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -29,8 +29,10 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 
 // Matches server/src/schemas/patient.ts's createPatientSchema, with the same
 // field names and requirements, so the validation shown to the user here never
-// disagrees with what the backend will actually accept.
-const patientFormSchema = z.object({
+// disagrees with what the backend will actually accept. Exported so
+// PatientDetailPage.tsx's edit dialog can reuse the exact same shape rather
+// than risk drifting from it.
+export const patientFormSchema = z.object({
   firstName: z.string().trim().min(1, 'Required'),
   lastName: z.string().trim().min(1, 'Required'),
   dob: z.string().min(1, 'Required'),
@@ -41,7 +43,155 @@ const patientFormSchema = z.object({
   emergencyContactName: z.string().trim().optional(),
   emergencyContactPhone: z.string().trim().optional(),
 })
-type PatientForm = z.infer<typeof patientFormSchema>
+export type PatientForm = z.infer<typeof patientFormSchema>
+
+// The 8-field grid shared by AddPatientDialog and PatientDetailPage.tsx's
+// EditPatientDialog, kept as one component (same reasoning as
+// EncounterPage.tsx's VitalsFieldGrid) so the two forms can never drift
+// apart in which fields they expose.
+export function PatientFormFields({ control }: { control: Control<PatientForm> }) {
+  return (
+    <div className="grid grid-cols-2 gap-x-4 gap-y-4">
+      <FormField
+        control={control}
+        name="firstName"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>First name</FormLabel>
+            <FormControl>
+              <Input {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="lastName"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Last name</FormLabel>
+            <FormControl>
+              <Input {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="dob"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Date of birth</FormLabel>
+            <FormControl>
+              <Input type="date" max={new Date().toISOString().slice(0, 10)} {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="gender"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Gender</FormLabel>
+            <Select onValueChange={field.onChange} value={field.value}>
+              <FormControl>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                <SelectItem value="MALE">Male</SelectItem>
+                <SelectItem value="FEMALE">Female</SelectItem>
+                <SelectItem value="OTHER">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="phone"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Phone</FormLabel>
+            <FormControl>
+              <Input {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="email"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Email</FormLabel>
+            <FormControl>
+              <Input type="email" {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="bloodGroup"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Blood group</FormLabel>
+            <Select onValueChange={field.onChange} value={field.value}>
+              <FormControl>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Unknown" />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent>
+                {BLOOD_GROUPS.map((bg) => (
+                  <SelectItem key={bg} value={bg}>
+                    {bg}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="emergencyContactName"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Emergency contact name</FormLabel>
+            <FormControl>
+              <Input {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={control}
+        name="emergencyContactPhone"
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>Emergency contact phone</FormLabel>
+            <FormControl>
+              <Input {...field} />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  )
+}
 
 const PAGE_SIZE = 20
 
@@ -104,145 +254,7 @@ function AddPatientDialog() {
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <div className="grid grid-cols-2 gap-x-4 gap-y-4">
-              <FormField
-                control={form.control}
-                name="firstName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>First name</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="lastName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Last name</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="dob"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Date of birth</FormLabel>
-                    <FormControl>
-                      <Input type="date" max={new Date().toISOString().slice(0, 10)} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="gender"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Gender</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="MALE">Male</SelectItem>
-                        <SelectItem value="FEMALE">Female</SelectItem>
-                        <SelectItem value="OTHER">Other</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Phone</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input type="email" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="bloodGroup"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Blood group</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value}>
-                      <FormControl>
-                        <SelectTrigger className="w-full">
-                          <SelectValue placeholder="Unknown" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {BLOOD_GROUPS.map((bg) => (
-                          <SelectItem key={bg} value={bg}>
-                            {bg}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="emergencyContactName"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Emergency contact name</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name="emergencyContactPhone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Emergency contact phone</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
+            <PatientFormFields control={form.control} />
             <DialogFooter>
               <Button type="submit" disabled={form.formState.isSubmitting}>
                 {form.formState.isSubmitting ? 'Saving…' : 'Register patient'}
