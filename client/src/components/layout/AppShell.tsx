@@ -65,12 +65,14 @@ function getDashboardBadge(to: string, summary: DashboardSummary | undefined): n
       if (to === '/ward-board') return summary.criticalPatients
       if (to === '/appointments') return summary.appointmentsToday
       if (to === '/invoices') return summary.pendingInvoices
+      if (to === '/prescriptions') return summary.pendingPrescriptions
       return 0
     case 'DOCTOR':
       if (to === '/encounters') return summary.activeEncounters
       if (to === '/lab-orders') return summary.labOrdersAwaitingReview
       if (to === '/ward-board') return summary.criticalPatients
       if (to === '/appointments') return summary.appointmentsToday
+      if (to === '/prescriptions') return summary.myPendingPrescriptions
       return 0
     case 'NURSE':
       // The actual "needs a nurse" queue — checked in, but no encounter
@@ -80,7 +82,9 @@ function getDashboardBadge(to: string, summary: DashboardSummary | undefined): n
       if (to === '/ward-board') return summary.criticalPatients
       return 0
     case 'PATIENT':
-      return to === '/appointments' ? summary.upcomingAppointments : 0
+      if (to === '/appointments') return summary.upcomingAppointments
+      if (to === '/prescriptions') return summary.pendingPrescriptions
+      return 0
     case 'LAB_TECH':
       return to === '/lab-orders' ? summary.pendingOrders : 0
     case 'PHARMACIST':
