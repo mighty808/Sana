@@ -400,7 +400,7 @@ type EditLabOrderForm = z.infer<typeof editLabOrderFormSchema>
 // is pre-filled from the current test names rather than starting blank —
 // same comma/newline-separated shape as the doctor's original "Request lab
 // tests" form.
-function EditLabOrderDialog({ order }: { order: LabOrder }) {
+export function EditLabOrderDialog({ order }: { order: LabOrder }) {
   const [open, setOpen] = useState(false)
   const updateLabOrder = useUpdateLabOrder()
   const defaultValues = {
@@ -508,14 +508,14 @@ function EditLabOrderDialog({ order }: { order: LabOrder }) {
 // Removes a lab order placed in error. Same still-ORDERED restriction as
 // EditLabOrderDialog, plus a confirm step since deletion can't be undone
 // the way a correction can.
-function DeleteLabOrderButton({ order, onDeleted }: { order: LabOrder; onDeleted: () => void }) {
+export function DeleteLabOrderButton({ order, onDeleted }: { order: LabOrder; onDeleted?: () => void }) {
   const deleteLabOrder = useDeleteLabOrder()
 
   async function handleConfirm() {
     try {
       await deleteLabOrder.mutateAsync(order._id)
       toast.success(`${order.labOrderNumber} deleted`)
-      onDeleted()
+      onDeleted?.()
     } catch (err) {
       toast.error(getApiErrorMessage(err))
     }
