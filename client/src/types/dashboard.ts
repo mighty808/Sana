@@ -19,6 +19,9 @@ export type DashboardSummary =
       // unlike outstandingBalance above (the money sum across them).
       // Powers the sidebar's Invoices badge.
       pendingInvoices: number
+      // System-wide PRESCRIBED-but-not-DISPENSED count — powers the
+      // sidebar's Prescriptions badge for Admin's oversight view.
+      pendingPrescriptions: number
     }
   | {
       role: 'DOCTOR'
@@ -28,6 +31,9 @@ export type DashboardSummary =
       labOrdersAwaitingReview: number
       aiConsultationsUnreviewed: number
       criticalPatients: number
+      // This doctor's own written-but-not-dispensed prescriptions —
+      // powers the sidebar's Prescriptions badge.
+      myPendingPrescriptions: number
     }
   | {
       // The Nurse is the front-line operator, handling registration,
@@ -45,6 +51,9 @@ export type DashboardSummary =
       upcomingAppointments: number
       unreadNotifications: number
       outstandingBalance: number
+      // Prescriptions written for this patient but not yet collected —
+      // powers the sidebar's Prescriptions badge.
+      pendingPrescriptions: number
     }
   | {
       role: 'LAB_TECH'
