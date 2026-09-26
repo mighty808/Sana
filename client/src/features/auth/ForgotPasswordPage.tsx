@@ -53,7 +53,7 @@ export function ForgotPasswordPage() {
       >
         <Card className="p-2">
           <CardHeader className="space-y-1.5 text-center">
-            <div className="mx-auto mb-2 text-2xl font-bold tracking-tight text-blue-600 lg:hidden">Sana</div>
+            <img src="/logo-full.png" alt="Sana" className="mx-auto mb-2 h-8 w-auto self-start justify-self-start lg:hidden" />
             {submitted && (
               <span className="mx-auto mb-1 flex size-11 items-center justify-center rounded-full bg-green-50 text-green-600">
                 <MailCheck className="size-5" />
