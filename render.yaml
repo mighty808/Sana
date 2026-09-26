@@ -20,7 +20,13 @@ services:
     runtime: node
     rootDir: server
     plan: free
-    buildCommand: npm ci && npm run build
+    # --include=dev: Render sets NODE_ENV=production for the build step too
+    # (see the envVar below), which makes a plain `npm ci` skip
+    # devDependencies. The build needs them anyway — @types/*, typescript
+    # itself, and the test-support packages the main tsconfig also compiles
+    # (mongodb-memory-server, supertest, @jest/globals) — so this flag
+    # overrides that regardless of NODE_ENV.
+    buildCommand: npm ci --include=dev && npm run build
     startCommand: npm run start
     healthCheckPath: /api/v1/health
     envVars:

@@ -20,7 +20,7 @@ const refreshCookieOptions = {
   // refresh in client/src/lib/api.ts would fail 100% of the time in
   // production with 'lax'. 'None' requires 'secure: true', which is already
   // the case in production above.
-  sameSite: (env.nodeEnv === 'production' ? 'none' : 'lax') as const,
+  sameSite: env.nodeEnv === 'production' ? ('none' as const) : ('lax' as const),
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days, matching JWT_REFRESH_EXPIRES_IN
   path: '/api/v1/auth', // only sent back on auth-related requests, not every API call
 }
