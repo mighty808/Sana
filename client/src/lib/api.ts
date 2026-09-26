@@ -13,15 +13,22 @@ export interface ApiError {
   error: { code: string; message: string }
 }
 
+// `baseURL` defaults to the relative '/api/v1', which relies on
+// vite.config.ts's dev proxy in development and on the client being served
+// from the same origin as the API in production. VITE_API_URL overrides this
+// for a split deployment (e.g. client on Vercel, server on Render), where
+// the client and server are on different origins and a relative path would
+// resolve against the client's own domain instead. Set to the server's full
+// origin, e.g. https://sana-server.onrender.com/api/v1.
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
+
 // This is the single Axios instance that every feature's API calls go
-// through. `baseURL: '/api/v1'` relies on vite.config.ts's dev proxy during
-// development, and in production on the client being served from the same
-// origin as the API, so calls never need a hardcoded server address.
-// `withCredentials: true` lets the browser send and receive the secure
-// refresh-token cookie that the backend sets on login (see
-// server/src/controllers/auth.controller.ts).
+// through. `withCredentials: true` lets the browser send and receive the
+// secure refresh-token cookie that the backend sets on login (see
+// server/src/controllers/auth.controller.ts) — required across origins too,
+// as long as the server's cookie is sameSite: 'none' there.
 export const api = axios.create({
-  baseURL: '/api/v1',
+  baseURL: API_BASE_URL,
   withCredentials: true,
 })
 

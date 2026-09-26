@@ -13,7 +13,14 @@ const REFRESH_COOKIE = 'refreshToken'
 const refreshCookieOptions = {
   httpOnly: true, // JavaScript running in the browser can't read this cookie, which helps stop attackers from stealing the token through malicious scripts
   secure: env.nodeEnv === 'production', // only sent over HTTPS in production
-  sameSite: 'lax' as const, // gives basic protection against cross-site attacks while still allowing normal navigation
+  // 'lax' in dev, where the client and server share an origin via the Vite
+  // proxy. In production the client (Vercel) and server (Render) are on
+  // different origins, and a Lax cookie is never sent on a cross-site
+  // fetch/XHR call at all — only on a top-level navigation — so the silent
+  // refresh in client/src/lib/api.ts would fail 100% of the time in
+  // production with 'lax'. 'None' requires 'secure: true', which is already
+  // the case in production above.
+  sameSite: (env.nodeEnv === 'production' ? 'none' : 'lax') as const,
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days, matching JWT_REFRESH_EXPIRES_IN
   path: '/api/v1/auth', // only sent back on auth-related requests, not every API call
 }
