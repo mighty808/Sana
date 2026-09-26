@@ -18,7 +18,14 @@ let socket: Socket | null = null
 export function connectSocket(): Socket {
   if (socket) return socket
 
-  socket = io({
+  // Same reasoning as lib/api.ts's VITE_API_URL: with no URL, socket.io-client
+  // connects to whatever origin served the page, which only works when the
+  // client and server share an origin. VITE_SOCKET_URL points it at the
+  // server's own origin instead for a split deployment (e.g. Vercel + Render)
+  // — set it to the server's origin with no path, e.g.
+  // https://sana-server.onrender.com. Left unset, this is undefined and
+  // socket.io-client falls back to same-origin exactly as before.
+  socket = io(import.meta.env.VITE_SOCKET_URL || undefined, {
     path: '/socket.io',
     auth: (cb) => cb({ token: getAccessToken() }),
     // Left at socket.io's default of retrying indefinitely (with its own

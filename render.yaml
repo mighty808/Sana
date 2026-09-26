@@ -1,0 +1,61 @@
+# Render Blueprint — deploys the server and ai-service as two separate web
+# services from this one repo. Import this file at dashboard.render.com/blueprints
+# ("New +" -> "Blueprint", point it at this repo) rather than creating each
+# service by hand; Render reads this file and provisions both at once.
+#
+# Neither service is deployed to Vercel: Vercel's serverless functions can't
+# hold a long-lived Socket.IO connection open, which the server depends on
+# for real-time notifications (see PROJECT_BRIEF.md section 4, "Notifications").
+# The client (client/) is the only piece that goes to Vercel — see the
+# "Deployment" section in README.md for that half of the setup.
+#
+# envVars marked `sync: false` are secrets: Render will prompt for them in
+# the dashboard on first deploy and will not read a value for them from this
+# file (so nothing sensitive is committed here). Everything else is set
+# directly and can be changed by editing this file and redeploying.
+
+services:
+  - type: web
+    name: sana-server
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render sets PORT itself; the server already reads it via env.ts.
+      - key: CLIENT_URL
+        sync: false # the Vercel deployment's URL, e.g. https://sana.vercel.app
+      - key: MONGO_URI
+        sync: false # a MongoDB Atlas connection string — Render has no managed MongoDB
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      - key: AI_SERVICE_URL
+        fromService:
+          type: web
+          name: sana-ai-service
+          property: hostport
+      - key: AI_SERVICE_TOKEN
+        sync: false # must be set to the SAME value as sana-ai-service's AI_SERVICE_TOKEN below
+
+  - type: web
+    name: sana-ai-service
+    runtime: python
+    rootDir: ai-service
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: GROQ_API_KEY
+        sync: false # from console.groq.com
+      - key: AI_SERVICE_TOKEN
+        sync: false # must be set to the SAME value as sana-server's AI_SERVICE_TOKEN above
