@@ -1,4 +1,4 @@
-import { Activity, Users, CalendarCheck, FlaskConical, ClipboardCheck } from 'lucide-react'
+import { Users, CalendarCheck, FlaskConical, ClipboardCheck } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 // The same live-data snapshot shown on the landing page's hero section,
@@ -36,9 +36,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         <div className="absolute inset-0 bg-gradient-to-t from-slate-900/85 via-slate-900/20 to-transparent" />
 
         <div className="relative flex h-full flex-col justify-between p-10">
-          <span className="flex items-center gap-2 text-2xl font-bold tracking-tight text-white">
-            <Activity className="size-6" /> Sana
-          </span>
+          <img src="/logo-full.png" alt="Sana" className="h-8 w-auto self-start justify-self-start" />
 
           <div>
             <h2 className="max-w-md text-2xl leading-snug font-semibold text-white">
