@@ -77,9 +77,7 @@ export function LandingPage() {
            so navigation and the sign-in button stay reachable on this fairly long page. ---------- */}
       <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur supports-[backdrop-filter]:bg-card/80">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-8 py-4">
-          <span className="flex items-center gap-2 text-2xl font-bold tracking-tight text-blue-600">
-            <Activity className="size-6" /> Sana
-          </span>
+          <img src="/logo-full.png" alt="Sana" className="h-8 w-auto" />
           <nav className="hidden items-center gap-8 text-sm font-medium text-slate-600 md:flex">
             <a href="#modules" className="hover:text-slate-900">Modules</a>
             <a href="#journey" className="hover:text-slate-900">How it works</a>
@@ -293,9 +291,7 @@ export function LandingPage() {
         <div className="mx-auto max-w-7xl px-8 py-14">
           <div className="grid grid-cols-2 gap-10 sm:grid-cols-4">
             <div className="col-span-2 sm:col-span-1">
-              <span className="flex items-center gap-2 text-lg font-bold text-blue-600">
-                <Activity className="size-5" /> Sana
-              </span>
+              <img src="/logo-full.png" alt="Sana" className="h-6 w-auto" />
               <p className="mt-3 max-w-[220px] text-sm leading-relaxed text-slate-600">
                 Hospital coordination, in real time — one record from registration to billing.
               </p>
