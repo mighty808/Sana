@@ -1,5 +1,5 @@
 import { Outlet, useLocation, useNavigate, NavLink } from 'react-router-dom'
-import { LogOut, User as UserIcon, Activity } from 'lucide-react'
+import { LogOut, User as UserIcon } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from '@/features/auth/useAuth'
 import { NAV_GROUPS } from './navItems'
@@ -158,11 +158,13 @@ export function AppShell() {
            side, nav items grouped under uppercase section labels. ---------- */}
       <Sidebar collapsible="icon" className="border-sidebar-border">
         <SidebarHeader className="px-3 py-4">
-          <div className="flex items-center gap-2 px-1">
-            <Activity className="size-6 shrink-0 text-primary" />
-            <span className="text-xl font-bold tracking-tight text-primary group-data-[collapsible=icon]:hidden">
-              Sana
-            </span>
+          <div className="flex items-center px-1">
+            {/* Icon-only mark shows when the sidebar is collapsed to its
+                narrow icon rail; the full lockup (icon + wordmark, one
+                image) shows once it's expanded — there's no room for the
+                wide lockup in the collapsed rail. */}
+            <img src="/logo-icon.png" alt="Sana" className="hidden size-6 shrink-0 group-data-[collapsible=icon]:block" />
+            <img src="/logo-full.png" alt="Sana" className="h-7 w-auto group-data-[collapsible=icon]:hidden" />
           </div>
         </SidebarHeader>
 
