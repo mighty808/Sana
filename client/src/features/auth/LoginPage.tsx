@@ -61,7 +61,7 @@ export function LoginPage() {
       >
         <Card className="p-2">
           <CardHeader className="space-y-1.5 text-center">
-            <div className="mx-auto mb-2 text-2xl font-bold tracking-tight text-blue-600 lg:hidden">Sana</div>
+            <img src="/logo-full.png" alt="Sana" className="mx-auto mb-2 h-8 w-auto self-start justify-self-start lg:hidden" />
             <CardTitle className="text-xl font-semibold text-slate-900">Welcome back</CardTitle>
             <CardDescription className="text-sm">
               Sign in with the email and password your administrator set up for you.
