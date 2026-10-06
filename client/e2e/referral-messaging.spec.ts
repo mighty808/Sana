@@ -16,10 +16,13 @@ test('doctor A refers a patient to doctor B, and they message each other live', 
   const encounter = await createOpenEncounterForDoctor(request, 'kwamedoc@sana.test', tag)
 
   // --- Doctor A sends the referral ---
-  // The "refer to another doctor" form starts already expanded on a fresh
+  // The Referrals card is collapsed behind its header by default
+  // (CollapsibleCard in EncounterPage.tsx), so it is opened first. Inside it,
+  // the "refer to another doctor" form starts already expanded on a fresh
   // encounter (no existing referrals yet) — same "collapse once something
-  // exists" shape the Diagnoses form uses — so there's no trigger to click.
+  // exists" shape the Diagnoses form uses — so there's no second trigger.
   await doctorPage.goto(`/encounters/${encounter._id}`)
+  await doctorPage.getByRole('button', { name: /^Referrals/ }).click()
   await doctorPage.getByRole('combobox', { name: 'Refer to' }).click()
   await doctorPage.getByRole('option', { name: 'Dr. Nana Yeboah' }).click()
   await doctorPage.getByPlaceholder('e.g. Cardiology opinion needed').fill(reason)
