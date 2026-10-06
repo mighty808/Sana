@@ -63,14 +63,22 @@ def test_entries_fit_inside_the_embedding_window():
     because medical vocabulary ("haemoptysis", "GeneXpert") splits into far
     more word-pieces than ordinary prose.
     """
-    transformers = pytest.importorskip(
-        "transformers", reason="transformers ships with sentence-transformers; skipped if absent"
+    # `tokenizers` ships with fastembed, so it is always present — unlike
+    # `transformers`, which this test used before and which is no longer
+    # installed now that the embedder runs on ONNX (the test would have been
+    # silently skipped).
+    tokenizers = pytest.importorskip(
+        "tokenizers", reason="tokenizers ships with fastembed; skipped if absent"
     )
-    tokenizer = transformers.AutoTokenizer.from_pretrained(EMBEDDING_MODEL)
+    tokenizer = tokenizers.Tokenizer.from_pretrained(EMBEDDING_MODEL)
+    # The model's tokenizer config can carry its own truncation limit, which
+    # would cap every count at that limit and hide exactly the oversized
+    # entries this test exists to catch. Count the full, untruncated length.
+    tokenizer.no_truncation()
 
     oversized = []
     for doc in DOCUMENTS:
-        count = len(tokenizer.encode(doc["text"]))
+        count = len(tokenizer.encode(doc["text"]).ids)
         if count > EMBEDDING_TOKEN_LIMIT:
             oversized.append(f"{doc['title']} ({count} tokens)")
 
