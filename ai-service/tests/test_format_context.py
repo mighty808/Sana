@@ -71,6 +71,25 @@ def test_lab_result_with_no_usable_fields_is_omitted_entirely():
     assert _format_context({"testResult": {}}) == "(no additional context provided)"
 
 
+def test_recorded_diagnoses_are_listed_with_their_code_when_there_is_one():
+    out = _format_context(
+        {"diagnoses": [{"diagnosis": "Malaria", "diagnosisCode": "B54"}, {"diagnosis": "Anaemia"}]}
+    )
+    assert out == "Diagnoses already recorded by the doctor:\n- Malaria (B54)\n- Anaemia"
+
+
+def test_diagnosis_entries_without_a_name_are_skipped():
+    assert _format_context({"diagnoses": [{"diagnosisCode": "B54"}, {}]}) == "(no additional context provided)"
+
+
+def test_diagnosis_notes_are_never_rendered_even_if_they_arrive():
+    """Notes are free text a doctor types — they can contain a patient's name —
+    so only the diagnosis name and code may reach the prompt."""
+    out = _format_context({"diagnoses": [{"diagnosis": "Malaria", "notes": "Ama Boateng says it started Monday"}]})
+    assert "Ama" not in out and "Boateng" not in out
+    assert out == "Diagnoses already recorded by the doctor:\n- Malaria"
+
+
 def test_sections_are_newline_separated_in_a_fixed_order():
     """Order is stable so two runs of the eval script produce comparable
     prompts — a reshuffled context would change the answer for reasons that
