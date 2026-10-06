@@ -138,6 +138,31 @@ describe('suggestDifferentialDiagnosis', () => {
     ])
   })
 
+  test('includes the diagnoses already recorded on the encounter — name and code only, never the notes', async () => {
+    const fetchSpy = mockAiServiceResponse()
+    const doctor = await createUser('DOCTOR')
+    const patient = await createPatient()
+    const encounter = await createEncounter(doctor.id, patient.id)
+    const { Diagnosis } = await import('../models/Diagnosis.js')
+    await Diagnosis.create({
+      encounter: encounter.id,
+      patient: patient.id,
+      doctor: doctor.id,
+      diagnosis: 'Malaria',
+      diagnosisCode: 'B54',
+      notes: 'Ama Boateng reports fever since Monday',
+    })
+
+    const consultation = await suggestDifferentialDiagnosis(encounter.id, doctor.id)
+
+    const sent = (fetchSpy.mock.calls[0]?.[1] as RequestInit).body as string
+    expect(JSON.parse(sent).patientContext.diagnoses).toEqual([{ diagnosis: 'Malaria', diagnosisCode: 'B54' }])
+    // Anonymization: free-text notes must never leave the server.
+    expect(sent).not.toContain('Ama Boateng')
+    // And it is stored with the consultation, like the lab results are.
+    expect(consultation.patientContext?.diagnoses).toEqual([{ diagnosis: 'Malaria', diagnosisCode: 'B54' }])
+  })
+
   test('a different doctor cannot request differentials for an encounter that is not theirs', async () => {
     mockAiServiceResponse()
     const owner = await createUser('DOCTOR')
