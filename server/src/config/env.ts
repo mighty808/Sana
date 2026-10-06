@@ -1,5 +1,6 @@
 // Loads variables from server/.env into process.env before anything else runs.
 import 'dotenv/config'
+import { withScheme } from '../utils/serviceUrl.js'
 
 // Reads an environment variable, falling back to a default value if provided.
 // Throws at startup if the variable is missing and has no fallback — this way
@@ -33,7 +34,9 @@ export const env = {
   // How long a refresh token (and its cookie) stays valid.
   jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
   // Base URL of the separate FastAPI microservice that runs Sana AI.
-  aiServiceUrl: process.env.AI_SERVICE_URL ?? 'http://localhost:8000',
+  // Normalised with withScheme: Render can hand this over as a bare
+  // "host:port" (see utils/serviceUrl.ts), which fetch cannot call.
+  aiServiceUrl: withScheme(process.env.AI_SERVICE_URL ?? 'http://localhost:8000'),
   // Shared secret proving to the AI service that a /v1/consult request came
   // from this backend. Optional on purpose, and it must match the
   // AI_SERVICE_TOKEN in the Python service's own environment: when neither
