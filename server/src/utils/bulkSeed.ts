@@ -92,9 +92,12 @@ export async function seedBulkClinicalData() {
 
   logger.info('Seeding bulk clinical data (patients, staff, appointments, encounters, lab orders)...')
 
-  // --- Staff: top up to 5 doctors and 5 nurses total (kwamedoc@sana.test
-  // and akosuanurse@sana.test, created earlier by seed(), already count
-  // toward that 5) ---
+  // --- Staff: top up to 2 doctors and 5 nurses total. The 2 doctors are the
+  // named accounts seed() already created (kwamedoc@sana.test and
+  // nanadoc@sana.test), each with their own login, so no generated doctors
+  // are added — the bulk appointments and encounters below are simply spread
+  // across those two. (akosuanurse@sana.test likewise counts toward the 5
+  // nurses.) ---
   const [doctorRole, nurseRole] = await Promise.all([
     Role.findOne({ name: 'DOCTOR' }),
     Role.findOne({ name: 'NURSE' }),
@@ -107,7 +110,7 @@ export async function seedBulkClinicalData() {
   ])
   const usedEmails = new Set([...existingDoctors, ...existingNurses].map((u) => u.email))
 
-  const newDoctors = await createStaffBatch(doctorRole._id, Math.max(0, 5 - existingDoctors.length), usedEmails)
+  const newDoctors = await createStaffBatch(doctorRole._id, Math.max(0, 2 - existingDoctors.length), usedEmails)
   const newNurses = await createStaffBatch(nurseRole._id, Math.max(0, 5 - existingNurses.length), usedEmails)
   const doctors = [...existingDoctors, ...newDoctors]
   const nurses = [...existingNurses, ...newNurses]
