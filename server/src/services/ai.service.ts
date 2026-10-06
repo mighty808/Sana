@@ -5,6 +5,7 @@ import { VitalSign } from '../models/VitalSign.js'
 import { LabOrder } from '../models/LabOrder.js'
 import { LabResult } from '../models/LabResult.js'
 import { Patient } from '../models/Patient.js'
+import { Diagnosis } from '../models/Diagnosis.js'
 import { AiConsultation, type AiReviewStatus, type AiConsultationSource, type AiAcuityLevel } from '../models/AiConsultation.js'
 import { env } from '../config/env.js'
 import { AppError, assertValidObjectId } from '../utils/apiResponse.js'
@@ -55,7 +56,7 @@ interface ConsultResponse {
 async function buildAnonymizedContext(
   encounterId: string,
   symptoms?: string[],
-  options: { includeLabResults?: boolean } = {},
+  options: { includeLabResults?: boolean; includeDiagnoses?: boolean } = {},
 ) {
   const encounter = await Encounter.findById(encounterId)
   if (!encounter) throw new AppError('Encounter not found', 404, 'ENCOUNTER_NOT_FOUND')
@@ -87,6 +88,17 @@ async function buildAnonymizedContext(
     }))
   }
 
+  // The diagnoses the doctor has already recorded on this encounter, so a
+  // differential builds on their working diagnosis instead of ignoring it.
+  // Only the diagnosis name and optional code are sent — never `notes`, which
+  // is free text a doctor types and can contain a patient's name, and the
+  // whole point of this function is that no such thing reaches the AI.
+  let diagnoses: Array<{ diagnosis: string; diagnosisCode?: string }> | undefined
+  if (options.includeDiagnoses) {
+    const recorded = await Diagnosis.find({ encounter: encounterId }).sort({ createdAt: 1 })
+    diagnoses = recorded.map((d) => ({ diagnosis: d.diagnosis, diagnosisCode: d.diagnosisCode ?? undefined }))
+  }
+
   return {
     encounter,
     context: {
@@ -103,6 +115,7 @@ async function buildAnonymizedContext(
         : undefined,
       symptoms,
       labResults,
+      diagnoses,
     },
   }
 }
@@ -411,7 +424,7 @@ export async function analyzeVitalsForNurse(encounterId: string, nurseId: string
 }
 
 const DIFFERENTIAL_QUERY =
-  "Based on this patient's chief complaint, vitals, and lab results, what are the most likely differential diagnoses to consider?"
+  "Based on this patient's chief complaint, vitals, lab results, and the diagnoses already recorded, what are the most likely differential diagnoses to consider?"
 
 // A doctor-only shortcut ('ai.consult', the same permission as the free-text
 // consult — no separate permission exists for this) that asks Sana AI for a
@@ -432,6 +445,7 @@ export async function suggestDifferentialDiagnosis(encounterId: string, doctorId
 
   const { encounter, context } = await buildAnonymizedContext(encounterId, notes ? [notes] : undefined, {
     includeLabResults: true,
+    includeDiagnoses: true,
   })
   assertEncounterOpen(encounter, 'suggest differential diagnoses on')
   const { response: aiResponse, responseTimeMs } = await callAiService(DIFFERENTIAL_QUERY, context, {
