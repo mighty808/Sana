@@ -85,6 +85,11 @@ class PatientContext(BaseModel):
     # Plural — every lab result recorded on the encounter so far, unlike the
     # single `testResult` above.
     labResults: list[dict] | None = None
+    # Only set for the doctor's "Suggest differential diagnoses" request.
+    # Diagnoses the doctor has already recorded on this encounter (name and
+    # optional code only — never their free-text notes), so the differential
+    # builds on the doctor's working diagnosis instead of ignoring it.
+    diagnoses: list[dict] | None = None
 
 
 class ConsultRequest(BaseModel):
