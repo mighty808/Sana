@@ -33,6 +33,12 @@ services:
       - key: NODE_ENV
         value: production
       # Render sets PORT itself; the server already reads it via env.ts.
+      # Turns OFF the login and AI rate limiters (10 login attempts / 15 min,
+      # 20 AI requests / min), which otherwise lock people out during demos and
+      # testing. Remove this entry or set it to "false" to turn them back on —
+      # that is the only change needed (see server/src/middleware/rateLimiter.ts).
+      - key: DISABLE_RATE_LIMITING
+        value: "true"
       - key: CLIENT_URL
         sync: false # the Vercel deployment's URL, e.g. https://sana.vercel.app
       - key: MONGO_URI
