@@ -57,4 +57,22 @@ describe('loginRateLimiter', () => {
     const res = await request.post('/api/v1/auth/forgot-password').send({ email: 'nobody@test.sana' })
     expect(res.status).toBe(429)
   })
+
+  test('DISABLE_RATE_LIMITING=true lets requests through even when the limit is already used up, and unsetting it blocks again', async () => {
+    // Runs last on purpose: the two tests above have already pushed this
+    // process's counter past the limit, so a 429 is what a request gets
+    // unless the switch is on.
+    const attempt = () => request.post('/api/v1/auth/forgot-password').send({ email: 'nobody@test.sana' })
+    expect((await attempt()).status).toBe(429)
+
+    process.env.DISABLE_RATE_LIMITING = 'true'
+    try {
+      expect((await attempt()).status).not.toBe(429)
+    } finally {
+      delete process.env.DISABLE_RATE_LIMITING
+    }
+
+    // Back off: the protection is simply on again, nothing was lost.
+    expect((await attempt()).status).toBe(429)
+  })
 })
