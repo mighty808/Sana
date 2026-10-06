@@ -1,4 +1,4 @@
-import { Outlet, useLocation, useNavigate, NavLink } from 'react-router-dom'
+import { useLocation, useNavigate, useOutlet, NavLink } from 'react-router-dom'
 import { LogOut, User as UserIcon } from 'lucide-react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from '@/features/auth/useAuth'
@@ -104,6 +104,15 @@ export function AppShell() {
   const { user, logout, hasPermission } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  // The current page, captured as an element here instead of rendering
+  // <Outlet /> inside the animated wrapper below. <Outlet /> reads the
+  // router's *current* route when it renders, so the page that is fading out
+  // was re-rendering as the NEW page, which then mounted a second time when
+  // the entering wrapper appeared — every page was built twice per
+  // navigation, and any state it held (an opened dialog, say) was lost on the
+  // second build. An element captured per render keeps its own route, so the
+  // exiting wrapper keeps showing the page it started with.
+  const outlet = useOutlet()
 
   // This is set up once and stays active for as long as the user is logged
   // in. It listens for live notification events and keeps the bell icon's
@@ -301,7 +310,7 @@ export function AppShell() {
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15, ease: 'easeOut' }}
               >
-                <Outlet />
+                {outlet}
               </motion.div>
             </AnimatePresence>
           </div>
