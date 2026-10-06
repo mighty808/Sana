@@ -107,6 +107,7 @@ export function CollapsibleConsultationGroup({
   encounterId,
   reviewable = true,
   defaultOpen = false,
+  bodyClassName = 'max-h-48',
   open: openProp,
   onOpenChange,
   onAcceptDifferential,
@@ -118,6 +119,9 @@ export function CollapsibleConsultationGroup({
   encounterId: string
   reviewable?: boolean
   defaultOpen?: boolean
+  // Height cap on the open list. The default keeps the inline panel compact;
+  // the expanded pop-up passes an empty string so answers use the room it has.
+  bodyClassName?: string
   open?: boolean
   onOpenChange?: (open: boolean) => void
   // Only meaningful for a DOCTOR_DIFFERENTIAL_DIAGNOSIS group — see
@@ -138,7 +142,7 @@ export function CollapsibleConsultationGroup({
         <ChevronDown className={`size-4 shrink-0 text-slate-600 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="max-h-48 space-y-3 overflow-y-auto border-t border-blue-200 p-3 pt-3">
+        <div className={`space-y-3 overflow-y-auto border-t border-blue-200 p-3 pt-3 ${bodyClassName}`}>
           {items.map((consultation) => (
             <ConsultationCard
               key={consultation._id}
