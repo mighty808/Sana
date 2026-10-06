@@ -23,8 +23,8 @@ import time
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
 
+from rag.embeddings import FastEmbedEmbeddings
 from rag.knowledge_base import DOCUMENTS
 
 # The service previously logged nothing at all, which made a production
@@ -35,8 +35,11 @@ logger = logging.getLogger("sana.rag")
 
 # This embedding model is small (about 80MB), fast, and runs locally
 # without needing an API key or a paid subscription to an embedding
-# provider, which makes it a reasonable default for now. It can be swapped
-# out for a stronger model later without changing anything else in this pipeline.
+# provider, which makes it a reasonable default for now. It runs through
+# fastembed (ONNX Runtime) rather than PyTorch, which keeps the process small
+# enough for a 512MB host — the weights, and therefore the vectors, are the
+# same. It can be swapped out for a stronger model later without changing
+# anything else in this pipeline.
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 # A general-purpose chat model hosted by Groq, chosen as a good balance
@@ -120,7 +123,7 @@ def _get_vectorstore() -> Chroma:
     if _vectorstore is not None:
         return _vectorstore
 
-    embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+    embeddings = FastEmbedEmbeddings(EMBEDDING_MODEL)
     store = Chroma(
         collection_name="sana_medical_kb",
         embedding_function=embeddings,
