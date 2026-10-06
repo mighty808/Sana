@@ -31,3 +31,6 @@ chromadb==1.5.9
 # needed, unlike OpenAI embeddings. Downloads a small (~80MB) model to a
 # local cache on first run.
 sentence-transformers==5.7.0
+# ONNX-based runner for the same MiniLM model, used by rag/embeddings.py so the
+# service no longer needs torch in memory at runtime (see that file for why).
+fastembed==0.8.1
