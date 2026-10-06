@@ -152,6 +152,10 @@ async function callAiService(
     })
 
     if (!res.ok) {
+      // Log the real reason server-side (e.g. 401 = token mismatch, 500 = the
+      // AI service itself failed) — the client only ever sees the generic 503
+      // below, so without this the cause is invisible in the Render logs.
+      logger.error(`AI service responded ${res.status} ${res.statusText} from ${env.aiServiceUrl}/v1/consult`)
       throw new AppError('Sana AI is currently unavailable', 503, 'AI_SERVICE_UNAVAILABLE')
     }
     aiResponse = (await res.json()) as ConsultResponse
@@ -160,6 +164,8 @@ async function callAiService(
     // Covers: connection refused (service not running), timeout, DNS
     // failure, malformed JSON response — all collapse to the same clean
     // "unavailable" error rather than leaking a raw fetch/network error.
+    // The raw error is logged first so a bad URL or a timeout is diagnosable.
+    logger.error(`AI service call failed (url: ${env.aiServiceUrl}/v1/consult)`, err)
     throw new AppError('Sana AI is currently unavailable', 503, 'AI_SERVICE_UNAVAILABLE')
   }
   return { response: aiResponse, responseTimeMs: Date.now() - startedAt }
