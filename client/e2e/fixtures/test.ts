@@ -25,11 +25,14 @@ interface RolePages {
   pharmacistPage: Page
 }
 
-async function withRolePage(browser: Browser, role: RoleName, use: (page: Page) => Promise<void>) {
+// The callback is deliberately not called `use`: that is Playwright's name for
+// a fixture's hand-over function, but inside this helper the react-hooks lint
+// rule reads any `use(...)` call as a React hook and reports it as one.
+async function withRolePage(browser: Browser, role: RoleName, provide: (page: Page) => Promise<void>) {
   const context = await browser.newContext({ storageState: authStatePath(role) })
   const page = await context.newPage()
   try {
-    await use(page)
+    await provide(page)
   } finally {
     await context.close()
   }
