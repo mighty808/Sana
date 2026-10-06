@@ -10,6 +10,16 @@
 import { request } from './httpClient.js'
 import { connectTestDb, disconnectTestDb, DB_BOOT_TIMEOUT_MS } from './setupTestDb.js'
 
+// A developer's local .env can set E2E_DISABLE_RATE_LIMIT (it exists for the
+// Playwright server), and dotenv loads that into every Jest run too — which
+// switches the limiter off and makes this file fail with 401/200 where it
+// expects 429. This file tests the real limit, so make sure the opt-out is
+// off for it, whatever the local environment says. The limiter reads the
+// variable on each request, so clearing it here is early enough.
+beforeAll(() => {
+  delete process.env.E2E_DISABLE_RATE_LIMIT
+})
+
 beforeAll(connectTestDb, DB_BOOT_TIMEOUT_MS)
 afterAll(disconnectTestDb, DB_BOOT_TIMEOUT_MS)
 
