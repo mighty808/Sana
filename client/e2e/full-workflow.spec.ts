@@ -82,6 +82,10 @@ test('a patient visit runs from vitals through labs, a post-result prescription,
   await doctorPage.keyboard.press('Escape')
 
   await doctorPage.goto(`/encounters/${encounter._id}`)
+  // The Prescriptions card is collapsed by default (CollapsibleCard in
+  // EncounterPage.tsx); open it, and the write form is already expanded since
+  // there are no prescriptions yet.
+  await doctorPage.getByRole('button', { name: /^Prescriptions/ }).click()
   await doctorPage.getByLabel('Drug').fill(drugName)
   await doctorPage.getByLabel('Dosage').fill('500mg')
   await doctorPage.getByLabel('Frequency').fill('3x daily')
