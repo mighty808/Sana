@@ -297,6 +297,19 @@ def _format_context(patient_context: dict) -> str:
                 lines.append(" ".join(bits))
         if lines:
             parts.append("Lab results:\n" + "\n".join(f"- {line}" for line in lines))
+    # Diagnoses the doctor has already recorded on this encounter — sent only
+    # with the differential-diagnosis request, as name plus optional code.
+    diagnoses = patient_context.get("diagnoses")
+    if diagnoses:
+        lines = []
+        for entry in diagnoses:
+            name = entry.get("diagnosis")
+            if not name:
+                continue
+            code = entry.get("diagnosisCode")
+            lines.append(f"{name} ({code})" if code else name)
+        if lines:
+            parts.append("Diagnoses already recorded by the doctor:\n" + "\n".join(f"- {line}" for line in lines))
     return "\n".join(parts) if parts else "(no additional context provided)"
 
 
@@ -442,6 +455,10 @@ DIFFERENTIAL_SYSTEM_PROMPT = (
     'presentation and retrieved passages support it), and "reasoning" (one short '
     "sentence citing the specific findings — symptoms, vitals, or lab values — "
     "that support this candidate).\n\n"
+    "If the context lists diagnoses the doctor has already recorded, treat them as "
+    "the doctor's working diagnosis: say whether the findings support them, and "
+    "also include alternatives the doctor may not have considered — do not simply "
+    "repeat the recorded diagnoses back.\n\n"
     "Only state a specific numeric threshold, dose, or named drug/regimen if it "
     "appears in the retrieved passages — otherwise speak in general terms. If the "
     "retrieved material has no strongly relevant passages, give only the "
