@@ -78,6 +78,11 @@ const aiConsultationSchema = new Schema(
       // so far, not just one, since differential-diagnosis reasoning needs
       // the fuller picture.
       labResults: { type: Schema.Types.Mixed },
+      // Only set for DOCTOR_DIFFERENTIAL_DIAGNOSIS — the diagnoses the
+      // doctor had already recorded on the encounter when they asked, as
+      // [{ diagnosis, diagnosisCode? }]. Stored so the answer can later be
+      // read against what the doctor had already concluded at that moment.
+      diagnoses: { type: Schema.Types.Mixed },
     },
     response: {
       diagnosticGuidance: { type: String, required: true },
