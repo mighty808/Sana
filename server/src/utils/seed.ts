@@ -5,15 +5,17 @@ import { hashPassword } from '../services/auth.service.js'
 import { DEFAULT_ROLE_PERMISSIONS, ROLE_NAMES } from '../types/permissions.js'
 import { logger } from './logger.js'
 import { seedBulkClinicalData } from './bulkSeed.js'
+import { seedDemoPatients } from './demoPatients.js'
 import mongoose from 'mongoose'
 import { fileURLToPath } from 'node:url'
 
 // Run with `npm run seed` (see server/package.json). This is safe to run
 // more than once: roles are created if missing or updated in place if they
 // already exist, existing test accounts are left alone rather than
-// duplicated or overwritten, and the bulk clinical data step (see
-// bulkSeed.ts) skips itself entirely once it detects a realistic amount of
-// data already exists.
+// duplicated or overwritten, the five demo patients are only created if
+// missing, and the bulk clinical data step (see bulkSeed.ts) only runs when
+// asked for with `--bulk` (and then skips itself once it detects a realistic
+// amount of data already exists).
 
 // Shared password for all seeded test accounts — fine for a local dev/demo
 // database, never use a fixed password like this in a real deployment.
@@ -86,9 +88,18 @@ async function seed() {
 
   await seedEssentials()
 
-  // Step 3: generate realistic bulk demo data (patients, extra doctors and
-  // nurses, appointments, encounters, lab orders) — see bulkSeed.ts.
-  await seedBulkClinicalData()
+  // Step 3: five fully filled-in demo patients (one of them linked to the
+  // patient login) — the default, small starting dataset.
+  await seedDemoPatients()
+
+  // Step 4 (opt-in): hundreds of randomised records for load/screenshot
+  // purposes — see bulkSeed.ts. Off by default so a plain `npm run seed` stays
+  // small and predictable; run `npm run seed -- --bulk` to add it. It used to
+  // run every time, which refilled a deliberately trimmed database with 50-100
+  // patients on the next seed.
+  if (process.argv.includes('--bulk')) {
+    await seedBulkClinicalData()
+  }
 
   // The seed script runs once and exits (unlike the actual server, which
   // keeps running), so the database connection is closed cleanly here
