@@ -232,8 +232,14 @@ function PatientPrescriptionsDialog({
 export function PrescriptionsPage() {
   const { user } = useAuth()
   const { data: prescriptions, isLoading } = usePrescriptions()
-  const [selected, setSelected] = useState<Prescription | null>(null)
-  const [selectedGroup, setSelectedGroup] = useState<PatientPrescriptionGroup | null>(null)
+  // Only the id of whatever was clicked is remembered, and the dialogs' data
+  // is looked up from the live list on every render (below). These used to
+  // hold a copy of the clicked row/group, which never updated: after the
+  // pharmacist pressed Dispense and the list refetched, the open dialog kept
+  // showing "Prescribed" with a Dispense button for a prescription that had
+  // already been dispensed, until it was closed and reopened.
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [selectedPatientId, setSelectedPatientId] = useState<string | null>(null)
   // Same distinction as LabOrdersPage's seesEveryOrder — Admin/Pharmacist
   // see the whole queue, a Doctor only sees their own, a Patient only
   // their own (see prescription.service.ts's listPrescriptions).
@@ -247,6 +253,8 @@ export function PrescriptionsPage() {
   // same treatment.
   const showGrouped = user?.role.name !== 'PATIENT'
   const groups = useMemo(() => groupByPatient(prescriptions ?? []), [prescriptions])
+  const selected = prescriptions?.find((rx) => rx._id === selectedId) ?? null
+  const selectedGroup = groups.find((group) => group.patient._id === selectedPatientId) ?? null
 
   return (
     <div className="space-y-4">
@@ -291,7 +299,7 @@ export function PrescriptionsPage() {
                   <TableRow
                     key={group.patient._id}
                     className="cursor-pointer hover:bg-slate-50/60"
-                    onClick={() => setSelectedGroup(group)}
+                    onClick={() => setSelectedPatientId(group.patient._id)}
                   >
                     <TableCell className="font-medium text-slate-900">
                       {group.patient.firstName} {group.patient.lastName}
@@ -323,7 +331,7 @@ export function PrescriptionsPage() {
             {!isLoading &&
               !showGrouped &&
               prescriptions?.map((rx) => (
-                <TableRow key={rx._id} className="cursor-pointer hover:bg-slate-50/60" onClick={() => setSelected(rx)}>
+                <TableRow key={rx._id} className="cursor-pointer hover:bg-slate-50/60" onClick={() => setSelectedId(rx._id)}>
                   <TableCell className="font-medium text-slate-900">
                     {rx.patient.firstName} {rx.patient.lastName}
                   </TableCell>
@@ -349,8 +357,8 @@ export function PrescriptionsPage() {
         )}
       </div>
 
-      <PrescriptionDetailDialog prescription={selected} onOpenChange={(open) => !open && setSelected(null)} />
-      <PatientPrescriptionsDialog group={selectedGroup} onOpenChange={(open) => !open && setSelectedGroup(null)} />
+      <PrescriptionDetailDialog prescription={selected} onOpenChange={(open) => !open && setSelectedId(null)} />
+      <PatientPrescriptionsDialog group={selectedGroup} onOpenChange={(open) => !open && setSelectedPatientId(null)} />
     </div>
   )
 }
