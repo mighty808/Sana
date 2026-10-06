@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import re
+import threading
 import time
 
 from langchain_chroma import Chroma
@@ -79,6 +80,16 @@ DISCLAIMER = (
 _vectorstore: Chroma | None = None
 _llm: ChatGroq | None = None
 
+# Guards the one-time creation of the vector store. FastAPI runs these sync
+# endpoints in a thread pool, so on a freshly started instance two requests
+# can arrive together and both find `_vectorstore` unset. Without a lock that
+# race had two failure modes, both reproduced: Chroma's client setup is not
+# safe to run from several threads at once (most of the racing requests
+# crashed, surfacing as "Sana AI is currently unavailable"), and when two did
+# get through, each seeded the knowledge base — leaving every passage in the
+# store twice, so duplicates filled the top-K results.
+_vectorstore_lock = threading.Lock()
+
 
 def knowledge_base_fingerprint() -> str:
     """
@@ -110,8 +121,10 @@ def knowledge_base_fingerprint() -> str:
 _FINGERPRINT_KEY = "sana_kb_fingerprint"
 
 
-def _get_vectorstore() -> Chroma:
+def _build_vectorstore() -> Chroma:
     """
+    Not called directly — go through `_get_vectorstore`, which serialises it.
+
     Creates the Chroma vector store the first time it's needed (or loads it
     from disk, if it was already saved there from a previous run), and seeds
     it from rag/knowledge_base.py whenever the persisted copy doesn't match
@@ -180,6 +193,22 @@ def _get_vectorstore() -> Chroma:
 
     _vectorstore = store
     return store
+
+
+def _get_vectorstore() -> Chroma:
+    """
+    Returns the shared vector store, building it on first use.
+
+    The unlocked check up front keeps every request after the first off the
+    lock entirely. Only a request that finds nothing waits on it, and
+    `_build_vectorstore` re-checks once it holds the lock, so a request that
+    queued behind the first one reuses the finished store instead of building
+    a second.
+    """
+    if _vectorstore is not None:
+        return _vectorstore
+    with _vectorstore_lock:
+        return _build_vectorstore()
 
 
 def _get_llm() -> ChatGroq:
