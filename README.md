@@ -40,10 +40,10 @@ Three processes, talking over HTTP and WebSockets.
 |---|---|---|
 | **Client** | React 19, TypeScript, Vite, Tailwind v4, shadcn/ui, TanStack Query, React Hook Form + Zod, Recharts, Socket.IO client | 22 pages across six role-specific interfaces |
 | **Server** | Node.js, Express, TypeScript, MongoDB + Mongoose, Socket.IO, JWT + Argon2id, Zod, Swagger | Business rules, persistence, authorisation, real-time push |
-| **AI service** | Python, FastAPI, LangChain, ChromaDB, local sentence-transformers embeddings, Groq-hosted LLM | Retrieval-augmented generation and acuity assessment |
+| **AI service** | Python, FastAPI, LangChain, ChromaDB, local ONNX (fastembed) embeddings, Groq-hosted LLM | Retrieval-augmented generation and acuity assessment |
 
 **The AI service is a separate process, not a library inside the backend.**
-That keeps the Python ML stack — torch, sentence-transformers, chromadb — out
+That keeps the Python ML stack — onnxruntime, fastembed, chromadb — out
 of the Node runtime, lets the two be deployed and scaled independently, and
 means an AI outage degrades one feature instead of taking the hospital system
 down with it. Every call to it is bounded by a 20-second timeout and collapses
@@ -128,7 +128,7 @@ npm run dev
 # Terminal 4 — AI service
 cd ai-service
 python -m venv venv
-./venv/Scripts/pip install -r requirements.txt   # ~2GB (torch + transformers); slow first time
+./venv/Scripts/pip install -r requirements.txt   # no torch — a few hundred MB, quick
 ./venv/Scripts/python -m uvicorn main:app --port 8000
 ```
 
@@ -155,7 +155,7 @@ exposing the AI service beyond localhost. Setting only one side fails closed.
 
 ### First run
 
-On its first request the AI service downloads a ~80MB embedding model from
+On its first request the AI service downloads a ~90MB ONNX embedding model from
 Hugging Face and seeds the vector store from `rag/knowledge_base.py`. That
 needs one working internet connection and is cached afterwards in
 `ai-service/chroma_db/` (gitignored). A hang or failure on that first call is
@@ -176,7 +176,7 @@ the one that loads the model.
 
 One endpoint, `POST /v1/consult`, does the work:
 
-1. The question is embedded with a **local** sentence-transformers model — no
+1. The question is embedded with a **local** MiniLM model run through ONNX — no
    API key, no per-call cost.
 2. That embedding searches a **ChromaDB** store of 42 condition summaries based
    on the Ghana Standard Treatment Guidelines.
@@ -305,7 +305,7 @@ cannot grow unnoticed.
 request:
 
 - **`ai-service`** — pytest on Python 3.13, with the embedding model cached so
-  a run doesn't re-download ~80MB. No `GROQ_API_KEY` is configured, by design:
+  a run doesn't re-download ~90MB. No `GROQ_API_KEY` is configured, by design:
   the suite is built to run without one, which means no secret to leak, no API
   spend per push, and no LLM non-determinism deciding whether a build passes.
 - **`e2e`** — type-checks both halves, runs the backend suite, then the
