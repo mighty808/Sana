@@ -9,6 +9,21 @@ import { env } from '../config/env.js'
 // several test accounts during normal demo use can trigger the strict limit
 // long before any real attacker would even notice it. This keeps production
 // security tight while avoiding an annoying limit during development.
+// Whether to bypass a limiter for this request. Two independent switches:
+//
+// - DISABLE_RATE_LIMITING=true turns both limiters off in ANY environment,
+//   production included. It is deliberately explicit and opt-in: unset (or any
+//   other value) leaves the limiters fully on, so nothing weakens unless
+//   someone sets it on purpose. To bring the protection back, remove it or set
+//   it to anything but "true" — no code change needed. It is read per request,
+//   so tests can flip it.
+// - E2E_DISABLE_RATE_LIMIT=true is the older, narrower switch for the
+//   Playwright server (see test/e2eServer.ts); it is ignored in production.
+function rateLimitingDisabled(): boolean {
+  if (process.env.DISABLE_RATE_LIMITING === 'true') return true
+  return env.nodeEnv !== 'production' && process.env.E2E_DISABLE_RATE_LIMIT === 'true'
+}
+
 export const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: env.nodeEnv === 'production' ? 10 : 30,
@@ -25,7 +40,7 @@ export const loginRateLimiter = rateLimit({
   // variable in a real deployment does nothing, so this can't be used to
   // weaken the protection where it actually matters. The Jest suite doesn't
   // set it either, so rate-limiter.test.ts still exercises the real limit.
-  skip: () => env.nodeEnv !== 'production' && process.env.E2E_DISABLE_RATE_LIMIT === 'true',
+  skip: rateLimitingDisabled,
 })
 
 // Limits how many requests one IP address can send to the Sana AI endpoint.
@@ -39,4 +54,5 @@ export const aiRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, error: { code: 'TOO_MANY_REQUESTS', message: 'Too many AI queries, slow down' } },
+  skip: rateLimitingDisabled,
 })
