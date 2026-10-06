@@ -45,6 +45,10 @@ test.describe('encounters', () => {
     await expect(doctorPage.getByText(`E2E diagnosis ${tag}`)).toBeVisible()
 
     // --- Prescription ---
+    // The Prescriptions card is collapsed behind its header by default (see
+    // CollapsibleCard in EncounterPage.tsx); once opened, the write form is
+    // already expanded because the encounter has no prescriptions yet.
+    await doctorPage.getByRole('button', { name: /^Prescriptions/ }).click()
     await doctorPage.getByLabel('Drug').fill(`E2E-Drug-${tag}`)
     await doctorPage.getByLabel('Dosage').fill('500mg')
     await doctorPage.getByLabel('Frequency').fill('3x daily')
@@ -76,6 +80,8 @@ test.describe('encounters', () => {
     const encounter = await createOpenEncounterForDoctor(request, 'kwamedoc@sana.test', tag)
 
     await doctorPage.goto(`/encounters/${encounter._id}`)
+    // Referrals is a collapsed card (CollapsibleCard) — open it to reach the form.
+    await doctorPage.getByRole('button', { name: /^Referrals/ }).click()
     await doctorPage.getByRole('combobox', { name: 'Refer to' }).click()
 
     await expect(doctorPage.getByRole('option', { name: 'Dr. Nana Yeboah' })).toBeVisible()
