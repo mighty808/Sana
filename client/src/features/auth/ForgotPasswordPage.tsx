@@ -65,7 +65,7 @@ export function ForgotPasswordPage() {
             <CardDescription className="text-sm">
               {submitted
                 ? "If that email is registered with Sana, a reset link is on its way. It expires in 1 hour, so use it soon."
-                : "No problem — enter the email your administrator registered for you and we'll send a link to reset your password."}
+                : "No problem. Enter the email your administrator registered for you and we'll send a link to reset your password."}
             </CardDescription>
           </CardHeader>
           {!submitted && (
