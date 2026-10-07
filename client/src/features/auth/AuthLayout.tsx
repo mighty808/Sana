@@ -1,15 +1,17 @@
-import { Users, CalendarCheck, FlaskConical, ClipboardCheck } from 'lucide-react'
+import { UserRound, FileText, Sparkles, ClipboardList } from 'lucide-react'
 import type { ReactNode } from 'react'
 
-// The same live-data snapshot shown on the landing page's hero section,
-// reused here so the login screens feel like part of the same product,
-// rather than a plain form that looks like it was bolted onto a different
-// site.
+// The same product facts shown on the landing page's hero section, reused here
+// so the login screens feel like part of the same product, rather than a plain
+// form that looks like it was bolted onto a different site. These replace
+// hand-typed "live" counts (64 patients and so on) that stopped being true once
+// the database changed. Keep them in step with PRODUCT_FACTS in
+// features/landing/LandingPage.tsx.
 const SNAPSHOT_STATS = [
-  { icon: Users, value: '64', label: 'Patients on record' },
-  { icon: CalendarCheck, value: '116', label: 'Appointments booked' },
-  { icon: FlaskConical, value: '30', label: 'Lab orders processed' },
-  { icon: ClipboardCheck, value: '49', label: 'Encounters completed' },
+  { icon: UserRound, value: '6', label: 'Role workspaces' },
+  { icon: FileText, value: '42', label: 'Ghana STG passages' },
+  { icon: Sparkles, value: '3', label: 'Sana AI assists' },
+  { icon: ClipboardList, value: '1', label: 'Record per patient' },
 ]
 
 // The shared layout for every login-related screen (Login, Forgot password,
@@ -21,7 +23,7 @@ const SNAPSHOT_STATS = [
 export function AuthLayout({ children }: { children: ReactNode }) {
   return (
     <div className="grid min-h-svh grid-cols-1 lg:grid-cols-2">
-      {/* ---------- Brand panel — hidden on smaller screens, since a
+      {/* ---------- Brand panel, hidden on smaller screens, since a
            split-screen layout only works once there's enough room for
            both halves to look good. ---------- */}
       <div className="relative hidden overflow-hidden lg:block">
@@ -40,7 +42,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
 
           <div>
             <h2 className="max-w-md text-2xl leading-snug font-semibold text-white">
-              Registration, vitals, lab results, and billing — one real-time record per patient.
+              One real-time record per patient, from registration to billing.
             </h2>
             <div className="mt-8 grid grid-cols-2 gap-4 rounded-lg border border-white/15 bg-white/10 p-5 backdrop-blur-sm">
               {SNAPSHOT_STATS.map((stat) => (
