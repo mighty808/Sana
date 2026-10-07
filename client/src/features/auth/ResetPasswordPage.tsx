@@ -69,7 +69,7 @@ export function ResetPasswordPage() {
             <CardDescription className="text-sm">
               {token
                 ? 'Use at least 8 characters. You\'ll be signed out everywhere else once this is saved.'
-                : 'This reset link is missing or no longer valid — request a new one from the forgot password page.'}
+                : 'This reset link is missing or no longer valid. Request a new one from the forgot password page.'}
             </CardDescription>
           </CardHeader>
           <CardContent>
