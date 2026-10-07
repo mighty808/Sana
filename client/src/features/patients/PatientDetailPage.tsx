@@ -121,7 +121,17 @@ export function PatientDetailPage() {
   // arbitrary query string straight into Tabs' defaultValue.
   const [searchParams] = useSearchParams()
   const requestedTab = searchParams.get('tab')
-  const initialTab = ['encounters', 'labs', 'prescriptions', 'invoices'].includes(requestedTab ?? '')
+  // The server only sends invoices to a user who holds 'invoice.read' (see
+  // patient.service.ts's getPatientTimeline); a nurse does not. Without this
+  // check the Invoices tab showed "No invoices yet" to a nurse for a patient
+  // who had invoices, which is false: the list was empty only because the
+  // nurse is not allowed to see it. So the tab is left out for such users, and
+  // a ?tab=invoices link falls back to Encounters like any other bad value.
+  const canSeeInvoices = hasPermission('invoice.read')
+  const availableTabs = canSeeInvoices
+    ? ['encounters', 'labs', 'prescriptions', 'invoices']
+    : ['encounters', 'labs', 'prescriptions']
+  const initialTab = availableTabs.includes(requestedTab ?? '')
     ? requestedTab!
     : 'encounters'
 
@@ -207,7 +217,7 @@ export function PatientDetailPage() {
           <TabsTrigger value="encounters">Encounters</TabsTrigger>
           <TabsTrigger value="labs">Lab Results</TabsTrigger>
           <TabsTrigger value="prescriptions">Prescriptions</TabsTrigger>
-          <TabsTrigger value="invoices">Invoices</TabsTrigger>
+          {canSeeInvoices && <TabsTrigger value="invoices">Invoices</TabsTrigger>}
         </TabsList>
         {/* Each visit that's happened for this patient, newest first (see
             patient.service.ts's getPatientTimeline) — clicking one opens
@@ -298,6 +308,7 @@ export function PatientDetailPage() {
         {/* Every invoice raised for this patient, newest first — clicking
             one opens the full invoice detail page (line items, payments,
             balance). */}
+        {canSeeInvoices && (
         <TabsContent value="invoices" className="space-y-3">
           {timeline!.invoices.length === 0 ? (
             <EmptyState icon={Receipt} title="No invoices yet" description="Billing for this patient will appear here." />
@@ -320,6 +331,7 @@ export function PatientDetailPage() {
             ))
           )}
         </TabsContent>
+        )}
       </Tabs>
     </div>
   )
