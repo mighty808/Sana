@@ -20,11 +20,16 @@ test.describe('patients', () => {
     await expect(nursePage).toHaveURL(/\/patients\/[a-f0-9]{24}$/)
     await expect(nursePage.getByRole('heading', { name: /Ama Boateng/ })).toBeVisible()
 
-    // The detail page's timeline is tabbed; all four should be present even
+    // The detail page's timeline is tabbed; these three should be present even
     // when the patient has no history yet.
-    for (const tab of ['Encounters', 'Lab Results', 'Prescriptions', 'Invoices']) {
+    for (const tab of ['Encounters', 'Lab Results', 'Prescriptions']) {
       await expect(nursePage.getByRole('tab', { name: tab })).toBeVisible()
     }
+    // A nurse has no 'invoice.read', so the server sends them no invoices. The
+    // tab is left out rather than shown empty, because "No invoices yet" would
+    // wrongly tell them a patient with bills has none. Admin, Doctor, Pharmacist
+    // and Lab Tech still get it (billing.spec.ts covers the admin side).
+    await expect(nursePage.getByRole('tab', { name: 'Invoices' })).toHaveCount(0)
   })
 
   test('a nurse can register a new patient and find it', async ({ nursePage }) => {
